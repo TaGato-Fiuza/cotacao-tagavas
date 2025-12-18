@@ -48,6 +48,8 @@ import {
   EyeOff
 } from 'lucide-react';
 
+// --- Configuração Firebase ---
+// ⚠️ ATENÇÃO: Substitua a linha abaixo pela configuração do seu Firebase Console
 const firebaseConfig = {
   apiKey: "AIzaSyCDPZvnsEmhTmncnEeShNCy7hAHDMMRQXA",
   authDomain: "cotacaotagavas.firebaseapp.com",
@@ -57,12 +59,12 @@ const firebaseConfig = {
   appId: "1:907640755544:web:bf6a6663f6e427a944412d"
 };
 
+// Initialize Firebase
 const app = initializeApp(firebaseConfig);
 const auth = getAuth(app);
 const db = getFirestore(app);
 
 // CORREÇÃO: Usa o ID injetado pelo ambiente se existir, senão usa o padrão.
-// Isso evita erros de permissão no Preview.
 const appId = typeof __app_id !== 'undefined' ? __app_id : 'cotacao-tagavas';
 
 // --- Credenciais Admin (Ofuscadas em Base64) ---
@@ -189,7 +191,6 @@ const AdminLogin = ({ setView }) => {
   const [error, setError] = useState(false);
 
   const handleLogin = () => {
-    // Verifica usando Base64
     try {
       if (btoa(username) === ADMIN_USER_HASH && btoa(password) === ADMIN_PASS_HASH) {
         setView('admin_dashboard');
@@ -257,7 +258,6 @@ const SupplierLogin = ({ setView, setSupplierAuth }) => {
         return;
       }
 
-      // Verifica apenas na coleção de respostas
       const q = query(
         collection(db, 'artifacts', appId, 'public', 'data', 'responses'),
         where('quoteId', '==', code.toUpperCase()),
@@ -350,16 +350,17 @@ const AdminDashboard = ({ userId, setView, setCurrentQuote }) => {
   const [activeTab, setActiveTab] = useState('open'); // 'open' ou 'closed'
 
   useEffect(() => {
-    if (!userId) return;
+    // CORREÇÃO: Removemos o "if (!userId) return" e o filtro por ownerId.
+    // Agora o admin vê TUDO no banco de dados, independente de qual dispositivo criou.
     const unsub = onSnapshot(collection(db, 'artifacts', appId, 'public', 'data', 'quotes'), (snapshot) => {
       const allQuotes = snapshot.docs.map(d => ({ id: d.id, ...d.data() }));
-      const myQuotes = allQuotes.filter(q => q.ownerId === userId);
-      myQuotes.sort((a, b) => (b.createdAt?.seconds || 0) - (a.createdAt?.seconds || 0));
-      setQuotes(myQuotes);
+      // Ordenação: Mais recentes primeiro
+      allQuotes.sort((a, b) => (b.createdAt?.seconds || 0) - (a.createdAt?.seconds || 0));
+      setQuotes(allQuotes);
       setLoading(false);
     });
     return () => unsub();
-  }, [userId]);
+  }, []); // Sem dependência de userId
 
   const handleCopy = (text) => {
     if (navigator.clipboard && window.isSecureContext) {
@@ -387,7 +388,6 @@ const AdminDashboard = ({ userId, setView, setCurrentQuote }) => {
   };
 
   const handleClone = async (quote) => {
-      // Uso simples de confirm
       const confirmed = window.confirm(`Clonar cotação "${quote.title}"?`);
       if(!confirmed) return;
 
@@ -418,7 +418,6 @@ const AdminDashboard = ({ userId, setView, setCurrentQuote }) => {
       
       try {
           const docRef = doc(db, 'artifacts', appId, 'public', 'data', 'quotes', quote.id);
-          // Força merge para garantir que apenas o status mude
           await setDoc(docRef, { status: newStatus }, { merge: true });
       } catch (e) {
           console.error("Erro ao atualizar:", e);
@@ -428,7 +427,6 @@ const AdminDashboard = ({ userId, setView, setCurrentQuote }) => {
       }
   };
 
-  // Filtragem baseada na aba ativa
   const filteredQuotes = quotes.filter(q => {
       if (activeTab === 'open') return q.status === 'open';
       return q.status === 'closed';
@@ -444,7 +442,6 @@ const AdminDashboard = ({ userId, setView, setCurrentQuote }) => {
           <h1 className="font-bold text-lg text-gray-900">Minhas Cotações</h1>
           <div className="w-8" />
         </div>
-        {/* Abas de Navegação */}
         <div className="flex border-t border-gray-100">
             <button 
                 onClick={() => setActiveTab('open')}
@@ -472,7 +469,6 @@ const AdminDashboard = ({ userId, setView, setCurrentQuote }) => {
         ) : (
           filteredQuotes.map(quote => (
             <Card key={quote.id} className={`p-4 hover:shadow-md transition-shadow cursor-pointer relative ${quote.status === 'closed' ? 'opacity-90 bg-gray-50' : ''}`} >
-               {/* Botões de Ação */}
                <div className="absolute top-4 right-4 flex gap-2 z-20">
                   {quote.status === 'open' && (
                     <button 
