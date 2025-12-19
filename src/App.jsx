@@ -8,7 +8,6 @@ import {
   doc, 
   getDoc, 
   updateDoc,
-  deleteDoc, 
   setDoc, 
   onSnapshot, 
   serverTimestamp,
@@ -46,13 +45,9 @@ import {
   Pencil,
   Archive,
   Eye,
-  EyeOff,
-  RefreshCw,
-  ScanBarcode // Ícone novo
+  EyeOff
 } from 'lucide-react';
 
-// --- Configuração Firebase ---
-// ⚠️ ATENÇÃO: Substitua a linha abaixo pela configuração do seu Firebase Console
 const firebaseConfig = {
   apiKey: "AIzaSyCDPZvnsEmhTmncnEeShNCy7hAHDMMRQXA",
   authDomain: "cotacaotagavas.firebaseapp.com",
@@ -62,13 +57,17 @@ const firebaseConfig = {
   appId: "1:907640755544:web:bf6a6663f6e427a944412d"
 };
 
-// Initialize Firebase
 const app = initializeApp(firebaseConfig);
 const auth = getAuth(app);
 const db = getFirestore(app);
 
+// CORREÇÃO: Usa o ID injetado pelo ambiente se existir, senão usa o padrão.
+// Isso evita erros de permissão no Preview.
 const appId = typeof __app_id !== 'undefined' ? __app_id : 'cotacao-tagavas';
 
+// --- Credenciais Admin (Ofuscadas em Base64) ---
+// Usuário: Mercado Tagavas -> TWVyY2FkbyBUYWdhdmFz
+// Senha: Tagavas@202874 -> VGFnYXZhc0AyMDI4NzQ=
 const ADMIN_USER_HASH = "TWVyY2FkbyBUYWdhdmFz";
 const ADMIN_PASS_HASH = "VGFnYXZhc0AyMDI4NzQ=";
 
@@ -107,14 +106,13 @@ const Button = ({ children, onClick, variant = 'primary', className = "", disabl
   );
 };
 
-const Input = ({ label, value, onChange, placeholder, type = "text", className = "", onKeyDown }) => (
+const Input = ({ label, value, onChange, placeholder, type = "text", className = "" }) => (
   <div className={`flex flex-col gap-1 ${className}`}>
     {label && <label className="text-sm font-medium text-gray-600">{label}</label>}
     <input
       type={type}
       value={value}
       onChange={onChange}
-      onKeyDown={onKeyDown}
       placeholder={placeholder}
       className="px-4 py-3 rounded-lg border border-gray-200 focus:border-blue-500 focus:ring-2 focus:ring-blue-100 outline-none transition-all"
     />
@@ -184,13 +182,14 @@ const HomeScreen = ({ setView }) => {
   );
 };
 
-// 1.1 Login do Admin
+// 1.1 Login do Admin (Seguro)
 const AdminLogin = ({ setView }) => {
   const [username, setUsername] = useState("");
   const [password, setPassword] = useState("");
   const [error, setError] = useState(false);
 
   const handleLogin = () => {
+    // Verifica usando Base64
     try {
       if (btoa(username) === ADMIN_USER_HASH && btoa(password) === ADMIN_PASS_HASH) {
         setView('admin_dashboard');
@@ -258,6 +257,7 @@ const SupplierLogin = ({ setView, setSupplierAuth }) => {
         return;
       }
 
+      // Verifica apenas na coleção de respostas
       const q = query(
         collection(db, 'artifacts', appId, 'public', 'data', 'responses'),
         where('quoteId', '==', code.toUpperCase()),
@@ -350,18 +350,16 @@ const AdminDashboard = ({ userId, setView, setCurrentQuote }) => {
   const [activeTab, setActiveTab] = useState('open'); // 'open' ou 'closed'
 
   useEffect(() => {
+    if (!userId) return;
     const unsub = onSnapshot(collection(db, 'artifacts', appId, 'public', 'data', 'quotes'), (snapshot) => {
       const allQuotes = snapshot.docs.map(d => ({ id: d.id, ...d.data() }));
-      allQuotes.sort((a, b) => (b.createdAt?.seconds || 0) - (a.createdAt?.seconds || 0));
-      setQuotes(allQuotes);
+      const myQuotes = allQuotes.filter(q => q.ownerId === userId);
+      myQuotes.sort((a, b) => (b.createdAt?.seconds || 0) - (a.createdAt?.seconds || 0));
+      setQuotes(myQuotes);
       setLoading(false);
     });
     return () => unsub();
-  }, []);
-
-  const handleRefresh = () => {
-    window.location.reload();
-  };
+  }, [userId]);
 
   const handleCopy = (text) => {
     if (navigator.clipboard && window.isSecureContext) {
@@ -389,6 +387,7 @@ const AdminDashboard = ({ userId, setView, setCurrentQuote }) => {
   };
 
   const handleClone = async (quote) => {
+      // Uso simples de confirm
       const confirmed = window.confirm(`Clonar cotação "${quote.title}"?`);
       if(!confirmed) return;
 
@@ -419,6 +418,7 @@ const AdminDashboard = ({ userId, setView, setCurrentQuote }) => {
       
       try {
           const docRef = doc(db, 'artifacts', appId, 'public', 'data', 'quotes', quote.id);
+          // Força merge para garantir que apenas o status mude
           await setDoc(docRef, { status: newStatus }, { merge: true });
       } catch (e) {
           console.error("Erro ao atualizar:", e);
@@ -428,21 +428,7 @@ const AdminDashboard = ({ userId, setView, setCurrentQuote }) => {
       }
   };
 
-  const handleDelete = async (quote) => {
-      if(!window.confirm(`Tem certeza que deseja EXCLUIR permanentemente a cotação "${quote.title}"?`)) return;
-      
-      setProcessing(quote.id);
-      try {
-          const docRef = doc(db, 'artifacts', appId, 'public', 'data', 'quotes', quote.id);
-          await deleteDoc(docRef);
-      } catch (e) {
-          console.error("Erro ao excluir:", e);
-          alert("Erro ao excluir. Tente novamente.");
-      } finally {
-          setProcessing(null);
-      }
-  };
-
+  // Filtragem baseada na aba ativa
   const filteredQuotes = quotes.filter(q => {
       if (activeTab === 'open') return q.status === 'open';
       return q.status === 'closed';
@@ -452,21 +438,13 @@ const AdminDashboard = ({ userId, setView, setCurrentQuote }) => {
     <div className="min-h-screen bg-gray-50 pb-24">
       <header className="bg-white border-b sticky top-0 z-10">
         <div className="max-w-3xl mx-auto px-4 py-4 flex items-center justify-between">
-          <div className="flex items-center gap-2">
-            <button onClick={() => setView('home')} className="p-2 -ml-2 text-gray-600 hover:bg-gray-100 rounded-full" title="Sair">
-                <LogOut size={20} />
-            </button>
-            <h1 className="font-bold text-lg text-gray-900">Minhas Cotações</h1>
-          </div>
-          
-          <button 
-            onClick={handleRefresh}
-            className="p-2 text-gray-500 hover:text-blue-600 rounded-full transition-colors"
-            title="Recarregar Dados"
-          >
-            <RefreshCw size={20} />
+          <button onClick={() => setView('home')} className="p-2 -ml-2 text-gray-600 hover:bg-gray-100 rounded-full" title="Sair">
+            <LogOut size={20} />
           </button>
+          <h1 className="font-bold text-lg text-gray-900">Minhas Cotações</h1>
+          <div className="w-8" />
         </div>
+        {/* Abas de Navegação */}
         <div className="flex border-t border-gray-100">
             <button 
                 onClick={() => setActiveTab('open')}
@@ -494,6 +472,7 @@ const AdminDashboard = ({ userId, setView, setCurrentQuote }) => {
         ) : (
           filteredQuotes.map(quote => (
             <Card key={quote.id} className={`p-4 hover:shadow-md transition-shadow cursor-pointer relative ${quote.status === 'closed' ? 'opacity-90 bg-gray-50' : ''}`} >
+               {/* Botões de Ação */}
                <div className="absolute top-4 right-4 flex gap-2 z-20">
                   {quote.status === 'open' && (
                     <button 
@@ -520,21 +499,10 @@ const AdminDashboard = ({ userId, setView, setCurrentQuote }) => {
                   >
                     {processing === quote.id ? <Loader2 size={18} className="animate-spin"/> : (quote.status === 'open' ? <Lock size={18} /> : <Unlock size={18} />)}
                   </button>
-                  {/* Botão de Excluir */}
-                  {quote.status === 'closed' && (
-                    <button 
-                        onClick={(e) => { e.stopPropagation(); handleDelete(quote); }}
-                        disabled={processing === quote.id}
-                        className="p-2 text-red-400 hover:text-red-600 hover:bg-red-50 rounded-full transition-colors bg-white border border-red-100 shadow-sm"
-                        title="Excluir Cotação"
-                    >
-                        {processing === quote.id ? <Loader2 size={18} className="animate-spin"/> : <Trash2 size={18} />}
-                    </button>
-                  )}
                </div>
 
               <div onClick={() => { setCurrentQuote(quote); setView('admin_results'); }}>
-                <div className="flex justify-between items-start mb-2 pr-32"> 
+                <div className="flex justify-between items-start mb-2 pr-28">
                   <h3 className={`font-bold text-lg ${quote.status === 'closed' ? 'text-gray-500' : 'text-gray-800'}`}>{quote.title}</h3>
                 </div>
                 <div className="flex items-center gap-2 mb-4">
@@ -611,10 +579,6 @@ const CreateQuote = ({ userId, setView, editingQuote }) => {
       : [{ id: generateId(), name: '', quantity: '1', unit: 'un' }]
   );
   const [isSubmitting, setIsSubmitting] = useState(false);
-  
-  // Estado para o campo de código de barras
-  const [barcode, setBarcode] = useState("");
-  const [isScanning, setIsScanning] = useState(false);
 
   const addItem = () => {
     setItems([...items, { id: generateId(), name: '', quantity: '', unit: 'un' }]);
@@ -627,41 +591,6 @@ const CreateQuote = ({ userId, setView, editingQuote }) => {
   const removeItem = (id) => {
     if(items.length > 1) {
       setItems(items.filter(item => item.id !== id));
-    }
-  };
-
-  // Função para buscar produto na API
-  const handleBarcodeLookup = async (e) => {
-    if(e && e.key !== 'Enter') return;
-    
-    const codeToSearch = barcode.trim();
-    if(!codeToSearch) return;
-
-    setIsScanning(true);
-    try {
-        const response = await fetch(`https://world.openfoodfacts.org/api/v0/product/${codeToSearch}.json`);
-        const data = await response.json();
-        
-        if(data.status === 1) {
-            const productName = data.product.product_name;
-            // Adiciona novo item automaticamente
-            setItems(prev => [...prev, { 
-                id: generateId(), 
-                name: productName, 
-                quantity: '1', 
-                unit: 'un',
-                barcode: codeToSearch 
-            }]);
-            setBarcode(''); // Limpa para o próximo bip
-            // Toca um bip simples se possível (opcional, requer áudio)
-        } else {
-            alert("Produto não encontrado no banco de dados. Digite o nome manualmente.");
-        }
-    } catch (err) {
-        console.error(err);
-        alert("Erro ao buscar produto.");
-    } finally {
-        setIsScanning(false);
     }
   };
 
@@ -708,49 +637,21 @@ const CreateQuote = ({ userId, setView, editingQuote }) => {
       </header>
 
       <main className="max-w-3xl mx-auto p-4 space-y-6">
-        <Card className="p-4 space-y-4">
+        <Card className="p-4">
           <Input 
             label="Nome da Cotação (Ex: Semanal Hortifruti)" 
             value={title} 
             onChange={e => setTitle(e.target.value)} 
             placeholder="Digite um nome..."
           />
-          
-          {/* Área de Escaneamento */}
-          <div className="bg-blue-50 border border-blue-100 rounded-xl p-4">
-             <div className="flex items-center gap-2 mb-2 text-blue-800 font-bold text-sm">
-                <ScanBarcode size={18} />
-                <span>Adicionar por Código de Barras</span>
-             </div>
-             <div className="flex gap-2">
-                <input 
-                    className="flex-1 px-3 py-2 rounded-lg border border-blue-200 focus:outline-none focus:ring-2 focus:ring-blue-300"
-                    placeholder="Bipe o produto ou digite o código e Enter"
-                    value={barcode}
-                    onChange={e => setBarcode(e.target.value)}
-                    onKeyDown={handleBarcodeLookup}
-                    autoFocus={!editingQuote} // Foca automaticamente se for nova
-                />
-                <Button 
-                    className="px-3" 
-                    onClick={() => handleBarcodeLookup()} 
-                    disabled={isScanning}
-                >
-                    {isScanning ? <Loader2 className="animate-spin" size={18}/> : <Plus size={18}/>}
-                </Button>
-             </div>
-             <p className="text-xs text-blue-600 mt-2">Dica: Use o leitor de código de barras neste campo para adicionar produtos automaticamente.</p>
-          </div>
         </Card>
-
         <div className="space-y-3">
-          <h2 className="text-sm font-bold text-gray-500 uppercase tracking-wider px-1">Itens da Lista</h2>
+          <h2 className="text-sm font-bold text-gray-500 uppercase tracking-wider px-1">Itens</h2>
           {items.map((item, index) => (
             <Card key={item.id} className="p-3 flex gap-2 items-start">
               <div className="w-16 flex-shrink-0">
                  <input 
                   type="text"
-                  inputMode="numeric"
                   className="w-full px-2 py-3 rounded-lg border border-gray-200 text-center"
                   placeholder="Qtd"
                   value={item.quantity}
@@ -775,7 +676,7 @@ const CreateQuote = ({ userId, setView, editingQuote }) => {
             </Card>
           ))}
           <Button variant="secondary" onClick={addItem} className="w-full border-dashed" icon={Plus}>
-            Adicionar Item Manualmente
+            Adicionar Item
           </Button>
         </div>
       </main>
@@ -942,8 +843,7 @@ const SupplierView = ({ supplierAuth, setView }) => {
                 <div className="w-32">
                     <label className="text-xs text-gray-500 mb-1 block">Preço Unit. (R$)</label>
                     <input 
-                    type="text"
-                    inputMode="decimal"
+                    type="tel" 
                     className="w-full px-3 py-2 rounded-lg border border-gray-300 focus:border-blue-500 focus:ring-2 focus:ring-blue-100 outline-none text-right font-medium text-lg"
                     placeholder="0,00"
                     value={getPriceValue(item, index)}
