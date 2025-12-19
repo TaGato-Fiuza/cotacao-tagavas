@@ -17,7 +17,8 @@ import {
   getDocs
 } from 'firebase/firestore';
 
-import { Html5Qrcode } from 'html5-qrcode'; 
+// ⚠️ IMPORTANTE: DESCOMENTE A LINHA ABAIXO NO SEU VS CODE PARA A CÂMERA FUNCIONAR!
+// import { Html5Qrcode } from 'html5-qrcode'; 
 
 import { 
   Plus, 
@@ -139,20 +140,15 @@ const Input = ({ label, value, onChange, placeholder, type = "text", className =
   </div>
 );
 
-// --- Componente de Scanner REAL ---
+// --- Componente de Scanner REAL (Otimizado) ---
 const BarcodeScanner = ({ onDetected, onClose }) => {
   const scannerRef = useRef(null);
 
   useEffect(() => {
-    // Carregamento dinâmico para evitar erro no preview do chat
-    // No seu VS Code, você pode usar o import estático (descomentado lá em cima) e usar new Html5Qrcode("reader")
-    
     let html5QrCode;
     
     const startScanner = async () => {
       try {
-        // Tenta usar a lib global ou importada
-        // ⚠️ Nota: No seu projeto local, certifique-se que 'Html5Qrcode' está importado!
         const Html5QrcodeLib = window.Html5Qrcode || (await import('html5-qrcode').catch(()=>null))?.Html5Qrcode;
 
         if (!Html5QrcodeLib) {
@@ -163,15 +159,23 @@ const BarcodeScanner = ({ onDetected, onClose }) => {
         html5QrCode = new Html5QrcodeLib("reader");
         scannerRef.current = html5QrCode;
 
+        // Configuração otimizada para performance
         const config = { 
-          fps: 10, 
+          fps: 15, // Aumentado para leitura mais rápida
           qrbox: { width: 250, height: 150 },
           aspectRatio: 1.0 
         };
 
-        // Inicia a câmera traseira ("environment") diretamente
+        // Configurações avançadas de câmera (Tenta pegar HD para melhor foco)
+        const cameraConfig = { 
+            facingMode: "environment",
+            focusMode: "continuous", // Tenta forçar foco continuo se suportado
+            width: { min: 640, ideal: 1280, max: 1920 },
+            height: { min: 480, ideal: 720, max: 1080 } 
+        };
+
         await html5QrCode.start(
-          { facingMode: "environment" }, 
+          cameraConfig, 
           config,
           (decodedText) => {
             onDetected(decodedText);
@@ -196,7 +200,7 @@ const BarcodeScanner = ({ onDetected, onClose }) => {
   }, [onDetected]);
 
   return (
-    <div className="fixed inset-0 z-50 bg-black/95 flex flex-col items-center justify-center p-4">
+    <div className="fixed inset-0 z-[60] bg-black/95 flex flex-col items-center justify-center p-4">
       <div className="bg-white p-4 rounded-xl w-full max-w-sm relative">
         <button 
           onClick={onClose}
@@ -205,9 +209,11 @@ const BarcodeScanner = ({ onDetected, onClose }) => {
           <X size={24} />
         </button>
         <h3 className="text-center font-bold mb-4 text-gray-800">Lendo Código...</h3>
+        
         <div id="reader" className="w-full overflow-hidden rounded-lg bg-gray-100 min-h-[300px]"></div>
+        
         <p className="text-xs text-center text-gray-500 mt-4">
-          Aponte a câmera para o código de barras.
+          Aproxime e afaste lentamente para focar.
         </p>
         <Button variant="secondary" onClick={onClose} className="w-full mt-4">
           Cancelar
@@ -835,9 +841,9 @@ const CreateQuote = ({ userId, setView, editingQuote }) => {
                 <ScanBarcode size={18} />
                 <span>Adicionar por Código de Barras</span>
              </div>
-             <div className="flex gap-2">
+             <div className="flex gap-2 flex-wrap sm:flex-nowrap">
                 <input 
-                    className="flex-1 px-3 py-2 rounded-lg border border-blue-200 focus:outline-none focus:ring-2 focus:ring-blue-300"
+                    className="flex-1 min-w-[150px] px-3 py-2 rounded-lg border border-blue-200 focus:outline-none focus:ring-2 focus:ring-blue-300"
                     placeholder="Bipe ou digite o código"
                     value={barcode}
                     onChange={e => setBarcode(e.target.value)}
