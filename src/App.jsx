@@ -145,8 +145,6 @@ const BarcodeScanner = ({ onDetected, onClose }) => {
   useEffect(() => {
     isMounted.current = true;
     
-    // Verifica se a classe Html5Qrcode está disponível (usuário descomentou o import)
-    // Se não estiver, usa o modo Mock (simulação)
     if (typeof Html5Qrcode === 'undefined') {
       setUseMock(true);
       return;
@@ -1155,7 +1153,7 @@ const SupplierView = ({ supplierAuth, setView }) => {
   );
 };
 
-// 5. Resultados
+// 5. Resultados (BLINDAGEM TOTAL CONTRA ERROS)
 const ResultsView = ({ quote, setView }) => {
   const [responses, setResponses] = useState([]);
   const [loading, setLoading] = useState(true);
@@ -1188,19 +1186,20 @@ const ResultsView = ({ quote, setView }) => {
   }, [responses]);
 
   const comparison = useMemo(() => {
-    if (!quote || !quote.items || responses.length === 0) return [];
+    // ⚠️ Proteção: Se quote não tem itens, retorna vazio (evita crash)
+    if (!quote || !quote.items || !Array.isArray(quote.items) || responses.length === 0) return [];
 
     return quote.items.map((item, idx) => {
       let minPrice = Infinity;
       let winner = null;
 
       const priceData = responses.map(r => {
-        // Robustez: garante que r.prices e r.notes existam (evita crash com dados antigos)
+        // ⚠️ Proteção: Garante que os objetos de preço existam
         const safePrices = r.prices || {};
         const safeNotes = r.notes || {};
         
         let raw = undefined;
-        // Tenta pegar por ID (novo), depois pelo index (legado)
+        // Lógica Híbrida: Tenta pegar por ID (novo), depois pelo index (legado)
         if (item.id && safePrices[item.id] !== undefined) raw = safePrices[item.id];
         else if (safePrices[idx] !== undefined) raw = safePrices[idx];
         
@@ -1208,13 +1207,14 @@ const ResultsView = ({ quote, setView }) => {
         if (item.id && safeNotes[item.id]) note = safeNotes[item.id];
         else if (safeNotes[idx]) note = safeNotes[idx];
         
-        // PROTEÇÃO EXTRA: Garante que note seja string primitiva ou null
+        // ⚠️ Proteção: Garante que note seja string ou null (nunca objeto)
         if (typeof note === 'object') note = JSON.stringify(note); 
         if (note === undefined) note = null;
         
         if (!raw) return { supplier: r.supplierName, price: null, raw: '-', note };
         
-        // CORREÇÃO CRÍTICA: Converte para string antes de usar replace
+        // ⚠️ Proteção Crítica: Converte para string antes de usar replace
+        // Se raw for número, vira "10", se for null vira "null", etc.
         const rawString = String(raw).trim();
         const val = parseFloat(rawString.replace(',', '.'));
 
@@ -1252,7 +1252,9 @@ const ResultsView = ({ quote, setView }) => {
       }
       row.prices.forEach(p => {
         if (p.price && row.item.quantity) {
-           const qty = parseFloat(row.item.quantity) || 1;
+           // ⚠️ Proteção: Garante que quantity seja tratada como número
+           const qtyString = String(row.item.quantity).replace(',', '.');
+           const qty = parseFloat(qtyString) || 0;
            totals[p.supplier] += (p.price * qty);
         }
       });
