@@ -775,11 +775,22 @@ const CreateQuote = ({ userId, setView, editingQuote }) => {
   };
 
   const handleBarcodeLookup = async (manualCode) => {
-    const codeToSearch = manualCode || barcode.trim();
+    const isCameraScan = !!manualCode;
+    let codeToSearch = manualCode || barcode.trim();
     if(!codeToSearch) return;
 
+    // Feedback imediato
+    try { new Audio('https://codeskulptor-demos.commondatastorage.googleapis.com/pang/pop.mp3').play(); } catch(e){}
+
     setIsScanning(true);
-    const productName = await fetchProductMetadata(codeToSearch);
+    
+    let productName = await fetchProductMetadata(codeToSearch);
+
+    if (!productName) {
+        let alternativeCode = codeToSearch.startsWith('0') ? codeToSearch.substring(1) : '0' + codeToSearch;
+        productName = await fetchProductMetadata(alternativeCode);
+        if (productName) codeToSearch = alternativeCode; 
+    }
     
     if(productName) {
         setItems(prev => [...prev, { 
@@ -790,11 +801,15 @@ const CreateQuote = ({ userId, setView, editingQuote }) => {
             barcode: codeToSearch 
         }]);
         setBarcode('');
-        if(showCamera) setShowCamera(false);
-        try { new Audio('https://codeskulptor-demos.commondatastorage.googleapis.com/pang/pop.mp3').play(); } catch(e){}
+        if(isCameraScan) setShowCamera(false);
     } else {
-        if(!showCamera) alert("Produto não encontrado. Digite o nome.");
+        if(isCameraScan) setShowCamera(false);
+        // Pequeno delay para garantir que o modal feche antes do alert
+        setTimeout(() => {
+            alert(`Produto não encontrado (Código: ${codeToSearch}).\nPor favor, insira o nome manualmente.`);
+        }, 100);
     }
+    
     setIsScanning(false);
   };
 
@@ -1192,6 +1207,10 @@ const ResultsView = ({ quote, setView }) => {
         let note = undefined;
         if (item.id && safeNotes[item.id]) note = safeNotes[item.id];
         else if (safeNotes[idx]) note = safeNotes[idx];
+        
+        // PROTEÇÃO EXTRA: Garante que note seja string primitiva ou null
+        if (typeof note === 'object') note = JSON.stringify(note); 
+        if (note === undefined) note = null;
         
         if (!raw) return { supplier: r.supplierName, price: null, raw: '-', note };
         
