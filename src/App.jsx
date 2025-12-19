@@ -18,7 +18,7 @@ import {
 } from 'firebase/firestore';
 
 // ⚠️ IMPORTANTE: Se estiver usando no seu PC, você pode descomentar a linha abaixo para importar estaticamente
-import { Html5Qrcode } from 'html5-qrcode'; 
+// import { Html5Qrcode } from 'html5-qrcode'; 
 
 import { 
   Plus, 
@@ -732,31 +732,30 @@ const CreateQuote = ({ userId, setView, editingQuote }) => {
     }
   };
 
-  // Função robusta de busca de produto
   const fetchProductMetadata = async (code) => {
-    const fetchWithTimeout = (url) => Promise.race([
-        fetch(url, { headers: { "User-Agent": "CotacaoTagavas - Android - Version 1.0" } }),
-        new Promise((_, reject) => setTimeout(() => reject(new Error('timeout')), 5000))
-    ]);
+    if(COSMOS_API_TOKEN) {
+      try {
+        const response = await fetch(`https://api.cosmos.bluesoft.com.br/gtins/${code}`, {
+          headers: { "X-Cosmos-Token": COSMOS_API_TOKEN }
+        });
+        if(response.ok) {
+          const data = await response.json();
+          return data.description || data.product_description; 
+        }
+      } catch(e) { console.log("Cosmos failed", e); }
+    }
 
     try {
-        // Tenta a API Mundial
-        const response = await fetchWithTimeout(`https://world.openfoodfacts.org/api/v0/product/${code}.json`);
-        const data = await response.json();
-        if(data.status === 1) return data.product.product_name;
+      const response = await fetch(`https://world.openfoodfacts.org/api/v0/product/${code}.json`);
+      const data = await response.json();
+      if(data.status === 1) return data.product.product_name;
+    } catch(e) { console.log("OpenFood failed", e); }
 
-        // Tenta a API Brasileira (as vezes tem dados locais melhores)
-        const responseBr = await fetchWithTimeout(`https://br.openfoodfacts.org/api/v0/product/${code}.json`);
-        const dataBr = await responseBr.json();
-        if(dataBr.status === 1) return dataBr.product.product_name;
-        
-    } catch(e) { 
-        console.warn("API Error:", e);
-    }
     return null;
   };
 
   const handleBarcodeLookup = async (manualCode) => {
+    const isCameraScan = !!manualCode;
     let codeToSearch = manualCode || barcode.trim();
     if(!codeToSearch) return;
 
@@ -765,14 +764,12 @@ const CreateQuote = ({ userId, setView, editingQuote }) => {
 
     setIsScanning(true);
     
-    // Tenta buscar o produto
     let productName = await fetchProductMetadata(codeToSearch);
 
-    // Se falhar e tiver zero à esquerda, tenta sem o zero (e vice-versa)
     if (!productName) {
         let alternativeCode = codeToSearch.startsWith('0') ? codeToSearch.substring(1) : '0' + codeToSearch;
         productName = await fetchProductMetadata(alternativeCode);
-        if (productName) codeToSearch = alternativeCode; // Atualiza para o código que funcionou
+        if (productName) codeToSearch = alternativeCode; 
     }
     
     if(productName) {
@@ -784,9 +781,13 @@ const CreateQuote = ({ userId, setView, editingQuote }) => {
             barcode: codeToSearch 
         }]);
         setBarcode('');
-        if(showCamera) setShowCamera(false);
+        if(isCameraScan) setShowCamera(false);
     } else {
-        if(!showCamera) alert(`Produto não encontrado (Código: ${codeToSearch}).\nPor favor, insira o nome manualmente.`);
+        if(isCameraScan) setShowCamera(false);
+        // Pequeno delay para garantir que o modal feche antes do alert
+        setTimeout(() => {
+            alert(`Produto não encontrado (Código: ${codeToSearch}).\nPor favor, insira o nome manualmente.`);
+        }, 100);
     }
     
     setIsScanning(false);
