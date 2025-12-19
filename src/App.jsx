@@ -16,7 +16,8 @@ import {
   where,
   getDocs
 } from 'firebase/firestore';
-// import { Html5QrcodeScanner } from 'html5-qrcode'; // <--- DESCOMENTE ISSO NO SEU PC (npm install html5-qrcode)
+// Importação da biblioteca de leitura de código de barras
+import { Html5QrcodeScanner } from 'html5-qrcode'; 
 import { 
   Plus, 
   Trash2, 
@@ -137,27 +138,65 @@ const Input = ({ label, value, onChange, placeholder, type = "text", className =
   </div>
 );
 
-// --- Componente de Scanner (SIMULADO PARA PREVIEW) ---
+// --- Componente de Scanner REAL ---
 const BarcodeScanner = ({ onDetected, onClose }) => {
-  // MOCK (Apenas para demonstração no Preview)
+  useEffect(() => {
+    // Inicializa o scanner com configurações otimizadas para mobile
+    const scanner = new Html5QrcodeScanner(
+      "reader",
+      { 
+        fps: 10, 
+        qrbox: { width: 250, height: 150 },
+        aspectRatio: 1.0,
+        rememberLastUsedCamera: true // Lembra qual câmera o usuário escolheu
+      },
+      /* verbose= */ false
+    );
+    
+    // Callback de sucesso ao ler código
+    const success = (decodedText) => {
+      onDetected(decodedText);
+      // Tenta limpar o scanner após leitura bem sucedida
+      scanner.clear().catch(err => console.error("Erro ao limpar scanner", err));
+    };
+
+    // Callback de erro (ignorado para não poluir o console enquanto escaneia)
+    const error = (err) => {
+      // console.warn(err);
+    };
+
+    scanner.render(success, error);
+
+    // Limpeza ao desmontar o componente (fechar modal)
+    return () => {
+      try {
+        scanner.clear().catch(() => {});
+      } catch (e) {
+        // Scanner pode já ter sido limpo
+      }
+    };
+  }, [onDetected]);
+
   return (
-    <div className="fixed inset-0 z-50 bg-black/90 flex flex-col items-center justify-center p-4">
-      <div className="bg-white p-4 rounded-xl w-full max-w-sm text-center">
-        <h3 className="font-bold mb-2">Câmera (Simulação)</h3>
-        <div id="reader" className="w-full h-48 bg-gray-900 mb-4 flex items-center justify-center text-gray-500 rounded-lg">
-           [Visualização da Câmera]
-        </div>
-        <p className="text-xs text-gray-500 mb-4">
-            No preview, a câmera real está desativada para evitar erros.
-            Abaixo, simule a leitura de um código real (ex: Coca-Cola).
-        </p>
-        <Button 
-            className="w-full mb-2" 
-            onClick={() => onDetected("7894900011517")} // Código EAN da Coca-Cola 2L
+    <div className="fixed inset-0 z-50 bg-black/95 flex flex-col items-center justify-center p-4">
+      <div className="bg-white p-4 rounded-xl w-full max-w-sm relative">
+        <button 
+          onClick={onClose}
+          className="absolute top-2 right-2 text-gray-400 hover:text-gray-600 z-10"
         >
-            Simular Leitura (Coca-Cola)
+          <X size={24} />
+        </button>
+        <h3 className="text-center font-bold mb-4 text-gray-800">Ler Código de Barras</h3>
+        
+        {/* Área onde a câmera será renderizada pela biblioteca */}
+        <div id="reader" className="w-full overflow-hidden rounded-lg bg-gray-100 min-h-[300px]"></div>
+        
+        <p className="text-xs text-center text-gray-500 mt-4">
+          Aponte a câmera para o código de barras do produto.
+        </p>
+        <Button variant="secondary" onClick={onClose} className="w-full mt-4">
+          Cancelar
         </Button>
-        <Button variant="secondary" onClick={onClose} className="w-full">Cancelar</Button>
       </div>
     </div>
   );
