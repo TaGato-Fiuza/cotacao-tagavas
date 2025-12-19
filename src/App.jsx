@@ -18,7 +18,7 @@ import {
 } from 'firebase/firestore';
 
 // ⚠️ NO SEU COMPUTADOR: Descomente a linha abaixo para a câmera funcionar!
-import { Html5Qrcode } from 'html5-qrcode';
+// import { Html5Qrcode } from 'html5-qrcode';
 
 import { 
   Plus, 
@@ -1180,11 +1180,14 @@ const ResultsView = ({ quote, setView }) => {
       }
   }, [responses]);
 
+  // Se não houver cotação carregada, mostra loading ou volta
+  if (!quote) return <div className="flex h-screen items-center justify-center"><Loader2 className="animate-spin text-blue-600" /></div>;
+
   const comparison = useMemo(() => {
     // ⚠️ Proteção: Se quote não tem itens, retorna vazio (evita crash)
-    // Filtra itens inválidos (sem ID ou nome) para não quebrar a tabela
-    if (!quote || !quote.items || !Array.isArray(quote.items) || responses.length === 0) return [];
+    if (!quote.items || !Array.isArray(quote.items) || responses.length === 0) return [];
     
+    // Filtra itens inválidos que podem ter sido salvos incorretamente
     const validItems = quote.items.filter(i => i && i.name);
 
     return validItems.map((item, idx) => {
@@ -1196,7 +1199,7 @@ const ResultsView = ({ quote, setView }) => {
         const safeNotes = r.notes || {};
         
         let raw = undefined;
-        // Tenta pegar por ID (novo), depois pelo index (legado)
+        // Lógica Híbrida: Tenta pegar por ID (novo), depois pelo index (legado)
         if (item.id && safePrices[item.id] !== undefined) raw = safePrices[item.id];
         else if (safePrices[idx] !== undefined) raw = safePrices[idx];
         
@@ -1209,6 +1212,7 @@ const ResultsView = ({ quote, setView }) => {
         
         if (!raw) return { supplier: r.supplierName, price: null, raw: '-', note };
         
+        // ⚠️ Proteção Crítica: Converte para string antes de usar replace
         const rawString = String(raw).trim();
         const val = parseFloat(rawString.replace(',', '.'));
 
@@ -1330,7 +1334,6 @@ const ResultsView = ({ quote, setView }) => {
                     </div>
                 </div>
                 <div className="flex gap-2">
-                    {/* Botão de Senhas */}
                     <Button variant="ghost" className="text-sm px-3" onClick={() => setShowCredentials(!showCredentials)} title="Ver Senhas dos Fornecedores">
                         {showCredentials ? <EyeOff size={18} /> : <Eye size={18} />}
                     </Button>
@@ -1343,7 +1346,6 @@ const ResultsView = ({ quote, setView }) => {
                 </div>
            </div>
            
-           {/* Área de Credenciais (Admin Only) */}
            {showCredentials && (
              <div className="bg-yellow-50 border border-yellow-200 rounded-lg p-3 animate-in slide-in-from-top-2">
                <h3 className="text-xs font-bold text-yellow-800 uppercase mb-2 flex items-center gap-2">
@@ -1360,7 +1362,6 @@ const ResultsView = ({ quote, setView }) => {
              </div>
            )}
 
-           {/* Filtros */}
            {showFilters && (
                <div className="flex gap-2 flex-wrap bg-gray-50 p-3 rounded-lg border border-gray-200 animate-in slide-in-from-top-2">
                    <span className="text-xs font-bold text-gray-500 w-full">Mostrar Colunas:</span>
@@ -1396,7 +1397,6 @@ const ResultsView = ({ quote, setView }) => {
                 .map(([supplier, total]) => {
                   const response = responses.find(r => r.supplierName === supplier);
                   const isFinal = response?.status === 'final';
-                  // const isWinner = basketTotals.winnersCount[supplier] > 0;
                   const isWinner = (basketTotals.winnersCount[supplier] || 0) > 0;
                   
                   return (
