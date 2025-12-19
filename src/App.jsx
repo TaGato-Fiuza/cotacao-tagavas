@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useMemo } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { initializeApp } from 'firebase/app';
 import { getAuth, signInAnonymously, onAuthStateChanged, signInWithCustomToken } from 'firebase/auth';
 import { 
@@ -8,6 +8,7 @@ import {
   doc, 
   getDoc, 
   updateDoc,
+  deleteDoc, 
   setDoc, 
   onSnapshot, 
   serverTimestamp,
@@ -15,6 +16,7 @@ import {
   where,
   getDocs
 } from 'firebase/firestore';
+// import { Html5QrcodeScanner } from 'html5-qrcode'; // <--- DESCOMENTE ISSO NO SEU PC (npm install html5-qrcode)
 import { 
   Plus, 
   Trash2, 
@@ -45,10 +47,15 @@ import {
   Pencil,
   Archive,
   Eye,
-  EyeOff
+  EyeOff,
+  RefreshCw,
+  ScanBarcode,
+  Camera 
 } from 'lucide-react';
 
-const firebaseConfig = {
+// --- Configuração Firebase ---
+// Usa a config do ambiente se existir (Preview), senão usa a SUA oficial (Produção/Local)
+const firebaseConfig = typeof __firebase_config !== 'undefined' ? JSON.parse(__firebase_config) : {
   apiKey: "AIzaSyCDPZvnsEmhTmncnEeShNCy7hAHDMMRQXA",
   authDomain: "cotacaotagavas.firebaseapp.com",
   projectId: "cotacaotagavas",
@@ -57,19 +64,29 @@ const firebaseConfig = {
   appId: "1:907640755544:web:bf6a6663f6e427a944412d"
 };
 
+const COSMOS_API_TOKEN = ""; 
+
 const app = initializeApp(firebaseConfig);
 const auth = getAuth(app);
 const db = getFirestore(app);
 
-// CORREÇÃO: Usa o ID injetado pelo ambiente se existir, senão usa o padrão.
-// Isso evita erros de permissão no Preview.
-const appId = typeof __app_id !== 'undefined' ? __app_id : 'cotacao-tagavas';
+// GARANTIA: appId seguro e sem caracteres estranhos
+const rawAppId = typeof __app_id !== 'undefined' ? __app_id : 'cotacao-tagavas';
+const appId = rawAppId.replace(/[^a-zA-Z0-9-_]/g, ''); 
 
-// --- Credenciais Admin (Ofuscadas em Base64) ---
-// Usuário: Mercado Tagavas -> TWVyY2FkbyBUYWdhdmFz
-// Senha: Tagavas@202874 -> VGFnYXZhc0AyMDI4NzQ=
 const ADMIN_USER_HASH = "TWVyY2FkbyBUYWdhdmFz";
 const ADMIN_PASS_HASH = "VGFnYXZhc0AyMDI4NzQ=";
+
+// --- Helpers de Banco de Dados ---
+// Centraliza a criação de referências para evitar erros de caminho
+const getCollectionRef = (collectionName) => {
+  return collection(db, 'artifacts', appId, 'public', 'data', collectionName);
+};
+
+const getDocRef = (collectionName, docId) => {
+  return doc(db, 'artifacts', appId, 'public', 'data', collectionName, docId);
+};
+
 
 // --- Componentes UI Reutilizáveis ---
 
@@ -106,18 +123,45 @@ const Button = ({ children, onClick, variant = 'primary', className = "", disabl
   );
 };
 
-const Input = ({ label, value, onChange, placeholder, type = "text", className = "" }) => (
+const Input = ({ label, value, onChange, placeholder, type = "text", className = "", onKeyDown }) => (
   <div className={`flex flex-col gap-1 ${className}`}>
     {label && <label className="text-sm font-medium text-gray-600">{label}</label>}
     <input
       type={type}
       value={value}
       onChange={onChange}
+      onKeyDown={onKeyDown}
       placeholder={placeholder}
       className="px-4 py-3 rounded-lg border border-gray-200 focus:border-blue-500 focus:ring-2 focus:ring-blue-100 outline-none transition-all"
     />
   </div>
 );
+
+// --- Componente de Scanner (SIMULADO PARA PREVIEW) ---
+const BarcodeScanner = ({ onDetected, onClose }) => {
+  // MOCK (Apenas para demonstração no Preview)
+  return (
+    <div className="fixed inset-0 z-50 bg-black/90 flex flex-col items-center justify-center p-4">
+      <div className="bg-white p-4 rounded-xl w-full max-w-sm text-center">
+        <h3 className="font-bold mb-2">Câmera (Simulação)</h3>
+        <div id="reader" className="w-full h-48 bg-gray-900 mb-4 flex items-center justify-center text-gray-500 rounded-lg">
+           [Visualização da Câmera]
+        </div>
+        <p className="text-xs text-gray-500 mb-4">
+            No preview, a câmera real está desativada para evitar erros.
+            Abaixo, simule a leitura de um código real (ex: Coca-Cola).
+        </p>
+        <Button 
+            className="w-full mb-2" 
+            onClick={() => onDetected("7894900011517")} // Código EAN da Coca-Cola 2L
+        >
+            Simular Leitura (Coca-Cola)
+        </Button>
+        <Button variant="secondary" onClick={onClose} className="w-full">Cancelar</Button>
+      </div>
+    </div>
+  );
+};
 
 // --- Helper para gerar IDs ---
 const generateId = () => Math.random().toString(36).substring(2, 15);
@@ -182,14 +226,13 @@ const HomeScreen = ({ setView }) => {
   );
 };
 
-// 1.1 Login do Admin (Seguro)
+// 1.1 Login do Admin
 const AdminLogin = ({ setView }) => {
   const [username, setUsername] = useState("");
   const [password, setPassword] = useState("");
   const [error, setError] = useState(false);
 
   const handleLogin = () => {
-    // Verifica usando Base64
     try {
       if (btoa(username) === ADMIN_USER_HASH && btoa(password) === ADMIN_PASS_HASH) {
         setView('admin_dashboard');
@@ -248,7 +291,7 @@ const SupplierLogin = ({ setView, setSupplierAuth }) => {
 
     setLoading(true);
     try {
-      const quoteRef = doc(db, 'artifacts', appId, 'public', 'data', 'quotes', code.toUpperCase());
+      const quoteRef = getDocRef('quotes', code.toUpperCase());
       const quoteSnap = await getDoc(quoteRef);
 
       if (!quoteSnap.exists()) {
@@ -257,9 +300,8 @@ const SupplierLogin = ({ setView, setSupplierAuth }) => {
         return;
       }
 
-      // Verifica apenas na coleção de respostas
       const q = query(
-        collection(db, 'artifacts', appId, 'public', 'data', 'responses'),
+        getCollectionRef('responses'),
         where('quoteId', '==', code.toUpperCase()),
         where('supplierName', '==', name)
       );
@@ -347,19 +389,24 @@ const AdminDashboard = ({ userId, setView, setCurrentQuote }) => {
   const [quotes, setQuotes] = useState([]);
   const [loading, setLoading] = useState(true);
   const [processing, setProcessing] = useState(null); 
-  const [activeTab, setActiveTab] = useState('open'); // 'open' ou 'closed'
+  const [activeTab, setActiveTab] = useState('open'); 
 
   useEffect(() => {
-    if (!userId) return;
-    const unsub = onSnapshot(collection(db, 'artifacts', appId, 'public', 'data', 'quotes'), (snapshot) => {
+    const unsub = onSnapshot(getCollectionRef('quotes'), (snapshot) => {
       const allQuotes = snapshot.docs.map(d => ({ id: d.id, ...d.data() }));
-      const myQuotes = allQuotes.filter(q => q.ownerId === userId);
-      myQuotes.sort((a, b) => (b.createdAt?.seconds || 0) - (a.createdAt?.seconds || 0));
-      setQuotes(myQuotes);
+      allQuotes.sort((a, b) => (b.createdAt?.seconds || 0) - (a.createdAt?.seconds || 0));
+      setQuotes(allQuotes);
       setLoading(false);
+    }, (error) => {
+      console.error("Erro no snapshot:", error);
+      setLoading(false); // Evita loop infinito de carregamento
     });
     return () => unsub();
-  }, [userId]);
+  }, []);
+
+  const handleRefresh = () => {
+    window.location.reload();
+  };
 
   const handleCopy = (text) => {
     if (navigator.clipboard && window.isSecureContext) {
@@ -387,14 +434,13 @@ const AdminDashboard = ({ userId, setView, setCurrentQuote }) => {
   };
 
   const handleClone = async (quote) => {
-      // Uso simples de confirm
       const confirmed = window.confirm(`Clonar cotação "${quote.title}"?`);
       if(!confirmed) return;
 
       setProcessing(quote.id);
       try {
           const shortId = Math.random().toString(36).substring(2, 8).toUpperCase();
-          const docRef = doc(db, 'artifacts', appId, 'public', 'data', 'quotes', shortId);
+          const docRef = getDocRef('quotes', shortId);
           await setDoc(docRef, {
             title: `${quote.title} (Cópia)`,
             ownerId: userId,
@@ -417,8 +463,7 @@ const AdminDashboard = ({ userId, setView, setCurrentQuote }) => {
       setProcessing(quote.id); 
       
       try {
-          const docRef = doc(db, 'artifacts', appId, 'public', 'data', 'quotes', quote.id);
-          // Força merge para garantir que apenas o status mude
+          const docRef = getDocRef('quotes', quote.id);
           await setDoc(docRef, { status: newStatus }, { merge: true });
       } catch (e) {
           console.error("Erro ao atualizar:", e);
@@ -428,7 +473,21 @@ const AdminDashboard = ({ userId, setView, setCurrentQuote }) => {
       }
   };
 
-  // Filtragem baseada na aba ativa
+  const handleDelete = async (quote) => {
+      if(!window.confirm(`Tem certeza que deseja EXCLUIR permanentemente a cotação "${quote.title}"?`)) return;
+      
+      setProcessing(quote.id);
+      try {
+          const docRef = getDocRef('quotes', quote.id);
+          await deleteDoc(docRef);
+      } catch (e) {
+          console.error("Erro ao excluir:", e);
+          alert("Erro ao excluir. Tente novamente.");
+      } finally {
+          setProcessing(null);
+      }
+  };
+
   const filteredQuotes = quotes.filter(q => {
       if (activeTab === 'open') return q.status === 'open';
       return q.status === 'closed';
@@ -438,13 +497,21 @@ const AdminDashboard = ({ userId, setView, setCurrentQuote }) => {
     <div className="min-h-screen bg-gray-50 pb-24">
       <header className="bg-white border-b sticky top-0 z-10">
         <div className="max-w-3xl mx-auto px-4 py-4 flex items-center justify-between">
-          <button onClick={() => setView('home')} className="p-2 -ml-2 text-gray-600 hover:bg-gray-100 rounded-full" title="Sair">
-            <LogOut size={20} />
+          <div className="flex items-center gap-2">
+            <button onClick={() => setView('home')} className="p-2 -ml-2 text-gray-600 hover:bg-gray-100 rounded-full" title="Sair">
+                <LogOut size={20} />
+            </button>
+            <h1 className="font-bold text-lg text-gray-900">Minhas Cotações</h1>
+          </div>
+          
+          <button 
+            onClick={handleRefresh}
+            className="p-2 text-gray-500 hover:text-blue-600 rounded-full transition-colors"
+            title="Recarregar Dados"
+          >
+            <RefreshCw size={20} />
           </button>
-          <h1 className="font-bold text-lg text-gray-900">Minhas Cotações</h1>
-          <div className="w-8" />
         </div>
-        {/* Abas de Navegação */}
         <div className="flex border-t border-gray-100">
             <button 
                 onClick={() => setActiveTab('open')}
@@ -472,7 +539,6 @@ const AdminDashboard = ({ userId, setView, setCurrentQuote }) => {
         ) : (
           filteredQuotes.map(quote => (
             <Card key={quote.id} className={`p-4 hover:shadow-md transition-shadow cursor-pointer relative ${quote.status === 'closed' ? 'opacity-90 bg-gray-50' : ''}`} >
-               {/* Botões de Ação */}
                <div className="absolute top-4 right-4 flex gap-2 z-20">
                   {quote.status === 'open' && (
                     <button 
@@ -499,10 +565,21 @@ const AdminDashboard = ({ userId, setView, setCurrentQuote }) => {
                   >
                     {processing === quote.id ? <Loader2 size={18} className="animate-spin"/> : (quote.status === 'open' ? <Lock size={18} /> : <Unlock size={18} />)}
                   </button>
+                  {/* Botão de Excluir */}
+                  {quote.status === 'closed' && (
+                    <button 
+                        onClick={(e) => { e.stopPropagation(); handleDelete(quote); }}
+                        disabled={processing === quote.id}
+                        className="p-2 text-red-400 hover:text-red-600 hover:bg-red-50 rounded-full transition-colors bg-white border border-red-100 shadow-sm"
+                        title="Excluir Cotação"
+                    >
+                        {processing === quote.id ? <Loader2 size={18} className="animate-spin"/> : <Trash2 size={18} />}
+                    </button>
+                  )}
                </div>
 
               <div onClick={() => { setCurrentQuote(quote); setView('admin_results'); }}>
-                <div className="flex justify-between items-start mb-2 pr-28">
+                <div className="flex justify-between items-start mb-2 pr-32"> 
                   <h3 className={`font-bold text-lg ${quote.status === 'closed' ? 'text-gray-500' : 'text-gray-800'}`}>{quote.title}</h3>
                 </div>
                 <div className="flex items-center gap-2 mb-4">
@@ -579,6 +656,10 @@ const CreateQuote = ({ userId, setView, editingQuote }) => {
       : [{ id: generateId(), name: '', quantity: '1', unit: 'un' }]
   );
   const [isSubmitting, setIsSubmitting] = useState(false);
+  
+  const [barcode, setBarcode] = useState("");
+  const [isScanning, setIsScanning] = useState(false);
+  const [showCamera, setShowCamera] = useState(false); 
 
   const addItem = () => {
     setItems([...items, { id: generateId(), name: '', quantity: '', unit: 'un' }]);
@@ -594,14 +675,64 @@ const CreateQuote = ({ userId, setView, editingQuote }) => {
     }
   };
 
+  const fetchProductMetadata = async (code) => {
+    if(COSMOS_API_TOKEN) {
+      try {
+        const response = await fetch(`https://api.cosmos.bluesoft.com.br/gtins/${code}`, {
+          headers: { "X-Cosmos-Token": COSMOS_API_TOKEN }
+        });
+        if(response.ok) {
+          const data = await response.json();
+          return data.description || data.product_description; 
+        }
+      } catch(e) { console.log("Cosmos failed", e); }
+    }
+
+    try {
+      const response = await fetch(`https://world.openfoodfacts.org/api/v0/product/${code}.json`);
+      const data = await response.json();
+      if(data.status === 1) return data.product.product_name;
+    } catch(e) { console.log("OpenFood failed", e); }
+
+    return null;
+  };
+
+  const handleBarcodeLookup = async (manualCode) => {
+    const codeToSearch = manualCode || barcode.trim();
+    if(!codeToSearch) return;
+
+    setIsScanning(true);
+    const productName = await fetchProductMetadata(codeToSearch);
+    
+    if(productName) {
+        setItems(prev => [...prev, { 
+            id: generateId(), 
+            name: productName, 
+            quantity: '1', 
+            unit: 'un',
+            barcode: codeToSearch 
+        }]);
+        setBarcode('');
+        if(showCamera) setShowCamera(false);
+        try { new Audio('https://codeskulptor-demos.commondatastorage.googleapis.com/pang/pop.mp3').play(); } catch(e){}
+    } else {
+        if(!showCamera) alert("Produto não encontrado. Digite o nome.");
+    }
+    setIsScanning(false);
+  };
+
+  const handleKeyDown = (e) => {
+    if(e.key === 'Enter') handleBarcodeLookup();
+  }
+
   const handleSubmit = async () => {
     if (!title.trim()) return alert("Dê um nome para a cotação");
     if (items.some(i => !i.name.trim())) return alert("Preencha o nome de todos os itens");
     setIsSubmitting(true);
     try {
       const docRef = editingQuote 
-        ? doc(db, 'artifacts', appId, 'public', 'data', 'quotes', editingQuote.id)
-        : doc(db, 'artifacts', appId, 'public', 'data', 'quotes', Math.random().toString(36).substring(2, 8).toUpperCase());
+        ? getDocRef('quotes', editingQuote.id)
+        : getDocRef('quotes', Math.random().toString(36).substring(2, 8).toUpperCase());
       
       const dataToSave = {
           title,
@@ -637,21 +768,62 @@ const CreateQuote = ({ userId, setView, editingQuote }) => {
       </header>
 
       <main className="max-w-3xl mx-auto p-4 space-y-6">
-        <Card className="p-4">
+        <Card className="p-4 space-y-4">
           <Input 
             label="Nome da Cotação (Ex: Semanal Hortifruti)" 
             value={title} 
             onChange={e => setTitle(e.target.value)} 
             placeholder="Digite um nome..."
           />
+          
+          <div className="bg-blue-50 border border-blue-100 rounded-xl p-4">
+             <div className="flex items-center gap-2 mb-2 text-blue-800 font-bold text-sm">
+                <ScanBarcode size={18} />
+                <span>Adicionar por Código de Barras</span>
+             </div>
+             <div className="flex gap-2">
+                <input 
+                    className="flex-1 px-3 py-2 rounded-lg border border-blue-200 focus:outline-none focus:ring-2 focus:ring-blue-300"
+                    placeholder="Bipe ou digite o código"
+                    value={barcode}
+                    onChange={e => setBarcode(e.target.value)}
+                    onKeyDown={handleKeyDown}
+                    autoFocus={!editingQuote} 
+                />
+                <Button 
+                    className="px-3" 
+                    onClick={() => handleBarcodeLookup()} 
+                    disabled={isScanning}
+                >
+                    <Plus size={18}/>
+                </Button>
+                <Button 
+                    variant="secondary"
+                    className="px-3 border-blue-200 text-blue-600" 
+                    onClick={() => setShowCamera(true)}
+                >
+                    <Camera size={18}/>
+                </Button>
+             </div>
+             <p className="text-xs text-blue-600 mt-2">Use o leitor ou a câmera para adicionar itens auto.</p>
+          </div>
         </Card>
+
+        {showCamera && (
+          <BarcodeScanner 
+            onDetected={(code) => handleBarcodeLookup(code)}
+            onClose={() => setShowCamera(false)}
+          />
+        )}
+
         <div className="space-y-3">
-          <h2 className="text-sm font-bold text-gray-500 uppercase tracking-wider px-1">Itens</h2>
+          <h2 className="text-sm font-bold text-gray-500 uppercase tracking-wider px-1">Itens da Lista</h2>
           {items.map((item, index) => (
             <Card key={item.id} className="p-3 flex gap-2 items-start">
               <div className="w-16 flex-shrink-0">
                  <input 
                   type="text"
+                  inputMode="numeric"
                   className="w-full px-2 py-3 rounded-lg border border-gray-200 text-center"
                   placeholder="Qtd"
                   value={item.quantity}
@@ -676,7 +848,7 @@ const CreateQuote = ({ userId, setView, editingQuote }) => {
             </Card>
           ))}
           <Button variant="secondary" onClick={addItem} className="w-full border-dashed" icon={Plus}>
-            Adicionar Item
+            Adicionar Item Manualmente
           </Button>
         </div>
       </main>
@@ -704,7 +876,7 @@ const SupplierView = ({ supplierAuth, setView }) => {
   useEffect(() => {
     const fetchQuote = async () => {
       try {
-        const docRef = doc(db, 'artifacts', appId, 'public', 'data', 'quotes', supplierAuth.quoteId);
+        const docRef = getDocRef('quotes', supplierAuth.quoteId);
         const docSnap = await getDoc(docRef);
         if (docSnap.exists()) {
           setQuote({ id: docSnap.id, ...docSnap.data() });
@@ -762,9 +934,9 @@ const SupplierView = ({ supplierAuth, setView }) => {
       };
 
       if (supplierAuth.responseId) {
-         await setDoc(doc(db, 'artifacts', appId, 'public', 'data', 'responses', supplierAuth.responseId), data, { merge: true });
+         await setDoc(getDocRef('responses', supplierAuth.responseId), data, { merge: true });
       } else {
-         const docRef = await addDoc(collection(db, 'artifacts', appId, 'public', 'data', 'responses'), data);
+         const docRef = await addDoc(getCollectionRef('responses'), data);
          supplierAuth.responseId = docRef.id; 
       }
 
@@ -843,7 +1015,8 @@ const SupplierView = ({ supplierAuth, setView }) => {
                 <div className="w-32">
                     <label className="text-xs text-gray-500 mb-1 block">Preço Unit. (R$)</label>
                     <input 
-                    type="tel" 
+                    type="text"
+                    inputMode="decimal"
                     className="w-full px-3 py-2 rounded-lg border border-gray-300 focus:border-blue-500 focus:ring-2 focus:ring-blue-100 outline-none text-right font-medium text-lg"
                     placeholder="0,00"
                     value={getPriceValue(item, index)}
@@ -900,7 +1073,7 @@ const ResultsView = ({ quote, setView }) => {
 
   useEffect(() => {
     if(!quote) return;
-    const q = query(collection(db, 'artifacts', appId, 'public', 'data', 'responses'));
+    const q = query(getCollectionRef('responses'));
     const unsub = onSnapshot(q, (snapshot) => {
       const allResponses = snapshot.docs.map(d => ({ id: d.id, ...d.data() }));
       const filtered = allResponses.filter(r => r.quoteId === quote.id);
