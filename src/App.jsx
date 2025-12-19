@@ -18,7 +18,7 @@ import {
 } from 'firebase/firestore';
 
 // ⚠️ IMPORTANTE: Se estiver usando no seu PC, você pode descomentar a linha abaixo para importar estaticamente
-// import { Html5Qrcode } from 'html5-qrcode'; 
+import { Html5Qrcode } from 'html5-qrcode'; 
 
 import { 
   Plus, 
