@@ -750,6 +750,7 @@ const CreateQuote = ({ userId, setView, editingQuote }) => {
               <div className="w-16 flex-shrink-0">
                  <input 
                   type="text"
+                  inputMode="numeric"
                   className="w-full px-2 py-3 rounded-lg border border-gray-200 text-center"
                   placeholder="Qtd"
                   value={item.quantity}
@@ -941,7 +942,8 @@ const SupplierView = ({ supplierAuth, setView }) => {
                 <div className="w-32">
                     <label className="text-xs text-gray-500 mb-1 block">Preço Unit. (R$)</label>
                     <input 
-                    type="tel" 
+                    type="text"
+                    inputMode="decimal"
                     className="w-full px-3 py-2 rounded-lg border border-gray-300 focus:border-blue-500 focus:ring-2 focus:ring-blue-100 outline-none text-right font-medium text-lg"
                     placeholder="0,00"
                     value={getPriceValue(item, index)}
