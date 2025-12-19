@@ -17,7 +17,7 @@ import {
   getDocs
 } from 'firebase/firestore';
 
-// ⚠️ IMPORTANTE: DESCOMENTE A LINHA ABAIXO NO SEU VS CODE PARA A CÂMERA FUNCIONAR!
+// ⚠️ IMPORTANTE: Se estiver usando no seu PC, você pode descomentar a linha abaixo para importar estaticamente
 import { Html5Qrcode } from 'html5-qrcode'; 
 
 import { 
@@ -146,50 +146,49 @@ const BarcodeScanner = ({ onDetected, onClose }) => {
     let html5QrCode;
 
     const startScanner = async () => {
-      // Pequeno delay para garantir que o elemento DOM "reader" exista
+      // Delay para garantir renderização do container
       await new Promise(r => setTimeout(r, 100));
 
       if (!document.getElementById("reader")) return;
 
       try {
-        // Tenta usar a classe importada globalmente ou via window (fallback)
-        // No seu PC, ao descomentar o import, 'Html5Qrcode' estará disponível diretamente.
-        const ScannerClass = window.Html5Qrcode || (typeof Html5Qrcode !== 'undefined' ? Html5Qrcode : null);
+        // Importação dinâmica para funcionar tanto no PC quanto no Preview
+        const ScannerClass = window.Html5Qrcode || (await import('html5-qrcode').catch(()=>null))?.Html5Qrcode;
 
         if (!ScannerClass) {
-          alert("Biblioteca de Câmera não detectada. Você descomentou a linha 21?");
+          alert("Biblioteca de Câmera não encontrada. Verifique o npm install html5-qrcode.");
+          onClose();
           return;
         }
 
         html5QrCode = new ScannerClass("reader");
         scannerRef.current = html5QrCode;
 
+        // Configuração otimizada para leitura rápida
         const config = { 
           fps: 15, 
           qrbox: { width: 250, height: 150 },
           aspectRatio: 1.0 
         };
 
-        // Tenta iniciar a câmera com configurações para focar melhor
         await html5QrCode.start(
           { facingMode: "environment" }, 
           config,
           (decodedText) => {
             if (isMounted.current) {
                 onDetected(decodedText);
-                // Para a câmera suavemente após leitura
                 html5QrCode.stop().then(() => html5QrCode.clear()).catch(console.error);
             }
           },
-          (errorMessage) => { /* ignorar erros de frame */ }
+          (errorMessage) => { /* ignora erros de frame */ }
         );
       } catch (err) {
         if (isMounted.current) {
-            console.error("Erro ao iniciar câmera:", err);
+            console.error("Erro Câmera:", err);
             if (err?.name === 'NotAllowedError') {
-                alert("Permissão de câmera negada.");
+                alert("Permita o uso da câmera no navegador.");
             } else {
-                alert("Erro na câmera: " + err);
+                alert("Erro ao abrir câmera. Verifique se está em HTTPS.");
             }
             onClose();
         }
@@ -733,39 +732,48 @@ const CreateQuote = ({ userId, setView, editingQuote }) => {
     }
   };
 
+  // Função robusta de busca de produto
   const fetchProductMetadata = async (code) => {
-    if(COSMOS_API_TOKEN) {
-      try {
-        const response = await fetch(`https://api.cosmos.bluesoft.com.br/gtins/${code}`, {
-          headers: { "X-Cosmos-Token": COSMOS_API_TOKEN }
-        });
-        if(response.ok) {
-          const data = await response.json();
-          return data.description || data.product_description; 
-        }
-      } catch(e) { console.log("Cosmos failed", e); }
-    }
+    const fetchWithTimeout = (url) => Promise.race([
+        fetch(url, { headers: { "User-Agent": "CotacaoTagavas - Android - Version 1.0" } }),
+        new Promise((_, reject) => setTimeout(() => reject(new Error('timeout')), 5000))
+    ]);
 
     try {
-      const response = await fetch(`https://world.openfoodfacts.org/api/v0/product/${code}.json`);
-      const data = await response.json();
-      if(data.status === 1) return data.product.product_name;
-    } catch(e) { console.log("OpenFood failed", e); }
+        // Tenta a API Mundial
+        const response = await fetchWithTimeout(`https://world.openfoodfacts.org/api/v0/product/${code}.json`);
+        const data = await response.json();
+        if(data.status === 1) return data.product.product_name;
 
+        // Tenta a API Brasileira (as vezes tem dados locais melhores)
+        const responseBr = await fetchWithTimeout(`https://br.openfoodfacts.org/api/v0/product/${code}.json`);
+        const dataBr = await responseBr.json();
+        if(dataBr.status === 1) return dataBr.product.product_name;
+        
+    } catch(e) { 
+        console.warn("API Error:", e);
+    }
     return null;
   };
 
   const handleBarcodeLookup = async (manualCode) => {
-    const codeToSearch = manualCode || barcode.trim();
+    let codeToSearch = manualCode || barcode.trim();
     if(!codeToSearch) return;
 
-    // Feedback imediato de leitura
-    if (manualCode) {
-        try { new Audio('https://codeskulptor-demos.commondatastorage.googleapis.com/pang/pop.mp3').play(); } catch(e){}
-    }
+    // Feedback imediato
+    try { new Audio('https://codeskulptor-demos.commondatastorage.googleapis.com/pang/pop.mp3').play(); } catch(e){}
 
     setIsScanning(true);
-    const productName = await fetchProductMetadata(codeToSearch);
+    
+    // Tenta buscar o produto
+    let productName = await fetchProductMetadata(codeToSearch);
+
+    // Se falhar e tiver zero à esquerda, tenta sem o zero (e vice-versa)
+    if (!productName) {
+        let alternativeCode = codeToSearch.startsWith('0') ? codeToSearch.substring(1) : '0' + codeToSearch;
+        productName = await fetchProductMetadata(alternativeCode);
+        if (productName) codeToSearch = alternativeCode; // Atualiza para o código que funcionou
+    }
     
     if(productName) {
         setItems(prev => [...prev, { 
@@ -776,12 +784,10 @@ const CreateQuote = ({ userId, setView, editingQuote }) => {
             barcode: codeToSearch 
         }]);
         setBarcode('');
+        if(showCamera) setShowCamera(false);
     } else {
-        alert(`Produto não encontrado (Código: ${codeToSearch}).\nPor favor, insira o nome manualmente.`);
+        if(!showCamera) alert(`Produto não encontrado (Código: ${codeToSearch}).\nPor favor, insira o nome manualmente.`);
     }
-    
-    // Fecha a câmera em ambos os casos para não travar a tela
-    if(showCamera) setShowCamera(false);
     
     setIsScanning(false);
   };
