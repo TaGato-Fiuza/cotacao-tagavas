@@ -8,6 +8,7 @@ import {
   doc, 
   getDoc, 
   updateDoc,
+  deleteDoc, // Importado para permitir exclusão
   setDoc, 
   onSnapshot, 
   serverTimestamp,
@@ -46,7 +47,7 @@ import {
   Archive,
   Eye,
   EyeOff,
-  RefreshCw // Novo ícone de refresh
+  RefreshCw 
 } from 'lucide-react';
 
 // --- Configuração Firebase ---
@@ -68,6 +69,9 @@ const db = getFirestore(app);
 // CORREÇÃO: Usa o ID injetado pelo ambiente se existir, senão usa o padrão.
 const appId = typeof __app_id !== 'undefined' ? __app_id : 'cotacao-tagavas';
 
+// --- Credenciais Admin (Ofuscadas em Base64) ---
+// Usuário: Mercado Tagavas -> TWVyY2FkbyBUYWdhdmFz
+// Senha: Tagavas@202874 -> VGFnYXZhc0AyMDI4NzQ=
 const ADMIN_USER_HASH = "TWVyY2FkbyBUYWdhdmFz";
 const ADMIN_PASS_HASH = "VGFnYXZhc0AyMDI4NzQ=";
 
@@ -359,7 +363,6 @@ const AdminDashboard = ({ userId, setView, setCurrentQuote }) => {
   }, []);
 
   const handleRefresh = () => {
-    // Força recarregamento da página para garantir dados frescos
     window.location.reload();
   };
 
@@ -423,6 +426,22 @@ const AdminDashboard = ({ userId, setView, setCurrentQuote }) => {
       } catch (e) {
           console.error("Erro ao atualizar:", e);
           alert("Erro ao alterar status. Tente novamente.");
+      } finally {
+          setProcessing(null);
+      }
+  };
+
+  // Função para deletar cotação
+  const handleDelete = async (quote) => {
+      if(!window.confirm(`Tem certeza que deseja EXCLUIR permanentemente a cotação "${quote.title}"?`)) return;
+      
+      setProcessing(quote.id);
+      try {
+          const docRef = doc(db, 'artifacts', appId, 'public', 'data', 'quotes', quote.id);
+          await deleteDoc(docRef);
+      } catch (e) {
+          console.error("Erro ao excluir:", e);
+          alert("Erro ao excluir. Tente novamente.");
       } finally {
           setProcessing(null);
       }
@@ -505,10 +524,21 @@ const AdminDashboard = ({ userId, setView, setCurrentQuote }) => {
                   >
                     {processing === quote.id ? <Loader2 size={18} className="animate-spin"/> : (quote.status === 'open' ? <Lock size={18} /> : <Unlock size={18} />)}
                   </button>
+                  {/* Botão de Excluir - Visível apenas quando encerrada */}
+                  {quote.status === 'closed' && (
+                    <button 
+                        onClick={(e) => { e.stopPropagation(); handleDelete(quote); }}
+                        disabled={processing === quote.id}
+                        className="p-2 text-red-400 hover:text-red-600 hover:bg-red-50 rounded-full transition-colors bg-white border border-red-100 shadow-sm"
+                        title="Excluir Cotação"
+                    >
+                        {processing === quote.id ? <Loader2 size={18} className="animate-spin"/> : <Trash2 size={18} />}
+                    </button>
+                  )}
                </div>
 
               <div onClick={() => { setCurrentQuote(quote); setView('admin_results'); }}>
-                <div className="flex justify-between items-start mb-2 pr-28">
+                <div className="flex justify-between items-start mb-2 pr-32"> {/* Aumentei padding para caber os botões */}
                   <h3 className={`font-bold text-lg ${quote.status === 'closed' ? 'text-gray-500' : 'text-gray-800'}`}>{quote.title}</h3>
                 </div>
                 <div className="flex items-center gap-2 mb-4">
