@@ -146,7 +146,6 @@ const BarcodeScanner = ({ onDetected, onClose }) => {
     let html5QrCode;
 
     const startScanner = async () => {
-      // Delay para garantir renderização do container
       await new Promise(r => setTimeout(r, 100));
 
       if (!document.getElementById("reader")) return;
@@ -164,7 +163,6 @@ const BarcodeScanner = ({ onDetected, onClose }) => {
         html5QrCode = new ScannerClass("reader");
         scannerRef.current = html5QrCode;
 
-        // Configuração otimizada para leitura rápida
         const config = { 
           fps: 15, 
           qrbox: { width: 250, height: 150 },
@@ -1150,27 +1148,43 @@ const ResultsView = ({ quote, setView }) => {
       const allResponses = snapshot.docs.map(d => ({ id: d.id, ...d.data() }));
       const filtered = allResponses.filter(r => r.quoteId === quote.id);
       setResponses(filtered);
-      if(loading) setVisibleSuppliers(filtered.map(r => r.supplierName));
       setLoading(false);
     });
     return () => unsub();
   }, [quote]); 
 
+  // Novo: Atualiza filtros de forma segura quando chegam novas respostas
+  useEffect(() => {
+      if (responses.length > 0) {
+          const currentNames = responses.map(r => r.supplierName);
+          setVisibleSuppliers(prev => {
+              // Mantém os já selecionados e adiciona novos que aparecerem
+              const unique = new Set([...prev, ...currentNames]);
+              return Array.from(unique);
+          });
+      }
+  }, [responses]);
+
   const comparison = useMemo(() => {
-    if (!quote || responses.length === 0) return [];
+    if (!quote || !quote.items || responses.length === 0) return [];
 
     return quote.items.map((item, idx) => {
       let minPrice = Infinity;
       let winner = null;
 
       const priceData = responses.map(r => {
+        // Robustez: garante que r.prices e r.notes existam (evita crash com dados antigos)
+        const safePrices = r.prices || {};
+        const safeNotes = r.notes || {};
+        
         let raw = undefined;
-        if (item.id && r.prices[item.id] !== undefined) raw = r.prices[item.id];
-        else if (r.prices[idx] !== undefined) raw = r.prices[idx];
+        // Tenta pegar por ID (novo), depois pelo index (legado)
+        if (item.id && safePrices[item.id] !== undefined) raw = safePrices[item.id];
+        else if (safePrices[idx] !== undefined) raw = safePrices[idx];
         
         let note = undefined;
-        if (item.id && r.notes && r.notes[item.id]) note = r.notes[item.id];
-        else if (r.notes && r.notes[idx]) note = r.notes[idx];
+        if (item.id && safeNotes[item.id]) note = safeNotes[item.id];
+        else if (safeNotes[idx]) note = safeNotes[idx];
         
         if (!raw) return { supplier: r.supplierName, price: null, raw: '-', note };
         
