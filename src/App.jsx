@@ -18,7 +18,7 @@ import {
 } from 'firebase/firestore';
 
 // ⚠️ IMPORTANTE: DESCOMENTE A LINHA ABAIXO NO SEU VS CODE PARA A CÂMERA FUNCIONAR!
-// import { Html5Qrcode } from 'html5-qrcode'; 
+import { Html5Qrcode } from 'html5-qrcode'; 
 
 import { 
   Plus, 
