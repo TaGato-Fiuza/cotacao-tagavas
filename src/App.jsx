@@ -45,7 +45,8 @@ import {
   Pencil,
   Archive,
   Eye,
-  EyeOff
+  EyeOff,
+  RefreshCw // Novo ícone de refresh
 } from 'lucide-react';
 
 // --- Configuração Firebase ---
@@ -67,9 +68,6 @@ const db = getFirestore(app);
 // CORREÇÃO: Usa o ID injetado pelo ambiente se existir, senão usa o padrão.
 const appId = typeof __app_id !== 'undefined' ? __app_id : 'cotacao-tagavas';
 
-// --- Credenciais Admin (Ofuscadas em Base64) ---
-// Usuário: Mercado Tagavas -> TWVyY2FkbyBUYWdhdmFz
-// Senha: Tagavas@202874 -> VGFnYXZhc0AyMDI4NzQ=
 const ADMIN_USER_HASH = "TWVyY2FkbyBUYWdhdmFz";
 const ADMIN_PASS_HASH = "VGFnYXZhc0AyMDI4NzQ=";
 
@@ -258,6 +256,7 @@ const SupplierLogin = ({ setView, setSupplierAuth }) => {
         return;
       }
 
+      // Verifica apenas na coleção de respostas
       const q = query(
         collection(db, 'artifacts', appId, 'public', 'data', 'responses'),
         where('quoteId', '==', code.toUpperCase()),
@@ -350,17 +349,19 @@ const AdminDashboard = ({ userId, setView, setCurrentQuote }) => {
   const [activeTab, setActiveTab] = useState('open'); // 'open' ou 'closed'
 
   useEffect(() => {
-    // CORREÇÃO: Removemos o "if (!userId) return" e o filtro por ownerId.
-    // Agora o admin vê TUDO no banco de dados, independente de qual dispositivo criou.
     const unsub = onSnapshot(collection(db, 'artifacts', appId, 'public', 'data', 'quotes'), (snapshot) => {
       const allQuotes = snapshot.docs.map(d => ({ id: d.id, ...d.data() }));
-      // Ordenação: Mais recentes primeiro
       allQuotes.sort((a, b) => (b.createdAt?.seconds || 0) - (a.createdAt?.seconds || 0));
       setQuotes(allQuotes);
       setLoading(false);
     });
     return () => unsub();
-  }, []); // Sem dependência de userId
+  }, []);
+
+  const handleRefresh = () => {
+    // Força recarregamento da página para garantir dados frescos
+    window.location.reload();
+  };
 
   const handleCopy = (text) => {
     if (navigator.clipboard && window.isSecureContext) {
@@ -436,11 +437,20 @@ const AdminDashboard = ({ userId, setView, setCurrentQuote }) => {
     <div className="min-h-screen bg-gray-50 pb-24">
       <header className="bg-white border-b sticky top-0 z-10">
         <div className="max-w-3xl mx-auto px-4 py-4 flex items-center justify-between">
-          <button onClick={() => setView('home')} className="p-2 -ml-2 text-gray-600 hover:bg-gray-100 rounded-full" title="Sair">
-            <LogOut size={20} />
+          <div className="flex items-center gap-2">
+            <button onClick={() => setView('home')} className="p-2 -ml-2 text-gray-600 hover:bg-gray-100 rounded-full" title="Sair">
+                <LogOut size={20} />
+            </button>
+            <h1 className="font-bold text-lg text-gray-900">Minhas Cotações</h1>
+          </div>
+          
+          <button 
+            onClick={handleRefresh}
+            className="p-2 text-gray-500 hover:text-blue-600 rounded-full transition-colors"
+            title="Recarregar Dados"
+          >
+            <RefreshCw size={20} />
           </button>
-          <h1 className="font-bold text-lg text-gray-900">Minhas Cotações</h1>
-          <div className="w-8" />
         </div>
         <div className="flex border-t border-gray-100">
             <button 
