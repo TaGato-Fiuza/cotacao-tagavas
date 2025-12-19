@@ -180,7 +180,6 @@ const BarcodeScanner = ({ onDetected, onClose }) => {
       } catch (err) {
         if (isMounted.current) {
             console.error("Erro Câmera:", err);
-            // Se der erro real (ex: permissão), fecha e avisa
             alert("Erro ao acessar câmera: " + err);
             onClose();
         }
@@ -199,7 +198,6 @@ const BarcodeScanner = ({ onDetected, onClose }) => {
     };
   }, []);
 
-  // Renderização do Modo Simulação (Preview ou sem biblioteca)
   if (useMock) {
     return (
       <div className="fixed inset-0 z-[60] bg-black/95 flex flex-col items-center justify-center p-4">
@@ -224,7 +222,6 @@ const BarcodeScanner = ({ onDetected, onClose }) => {
     );
   }
 
-  // Renderização do Modo Real
   return (
     <div className="fixed inset-0 z-[60] bg-black/95 flex flex-col items-center justify-center p-4">
       <div className="bg-white p-4 rounded-xl w-full max-w-sm relative">
@@ -777,7 +774,6 @@ const CreateQuote = ({ userId, setView, editingQuote }) => {
     let codeToSearch = manualCode || barcode.trim();
     if(!codeToSearch) return;
 
-    // Feedback imediato
     try { new Audio('https://codeskulptor-demos.commondatastorage.googleapis.com/pang/pop.mp3').play(); } catch(e){}
 
     setIsScanning(true);
@@ -802,7 +798,6 @@ const CreateQuote = ({ userId, setView, editingQuote }) => {
         if(isCameraScan) setShowCamera(false);
     } else {
         if(isCameraScan) setShowCamera(false);
-        // Pequeno delay para garantir que o modal feche antes do alert
         setTimeout(() => {
             alert(`Produto não encontrado (Código: ${codeToSearch}).\nPor favor, insira o nome manualmente.`);
         }, 100);
@@ -1187,19 +1182,21 @@ const ResultsView = ({ quote, setView }) => {
 
   const comparison = useMemo(() => {
     // ⚠️ Proteção: Se quote não tem itens, retorna vazio (evita crash)
+    // Filtra itens inválidos (sem ID ou nome) para não quebrar a tabela
     if (!quote || !quote.items || !Array.isArray(quote.items) || responses.length === 0) return [];
+    
+    const validItems = quote.items.filter(i => i && i.name);
 
-    return quote.items.map((item, idx) => {
+    return validItems.map((item, idx) => {
       let minPrice = Infinity;
       let winner = null;
 
       const priceData = responses.map(r => {
-        // ⚠️ Proteção: Garante que os objetos de preço existam
         const safePrices = r.prices || {};
         const safeNotes = r.notes || {};
         
         let raw = undefined;
-        // Lógica Híbrida: Tenta pegar por ID (novo), depois pelo index (legado)
+        // Tenta pegar por ID (novo), depois pelo index (legado)
         if (item.id && safePrices[item.id] !== undefined) raw = safePrices[item.id];
         else if (safePrices[idx] !== undefined) raw = safePrices[idx];
         
@@ -1207,14 +1204,11 @@ const ResultsView = ({ quote, setView }) => {
         if (item.id && safeNotes[item.id]) note = safeNotes[item.id];
         else if (safeNotes[idx]) note = safeNotes[idx];
         
-        // ⚠️ Proteção: Garante que note seja string ou null (nunca objeto)
         if (typeof note === 'object') note = JSON.stringify(note); 
         if (note === undefined) note = null;
         
         if (!raw) return { supplier: r.supplierName, price: null, raw: '-', note };
         
-        // ⚠️ Proteção Crítica: Converte para string antes de usar replace
-        // Se raw for número, vira "10", se for null vira "null", etc.
         const rawString = String(raw).trim();
         const val = parseFloat(rawString.replace(',', '.'));
 
@@ -1252,7 +1246,6 @@ const ResultsView = ({ quote, setView }) => {
       }
       row.prices.forEach(p => {
         if (p.price && row.item.quantity) {
-           // ⚠️ Proteção: Garante que quantity seja tratada como número
            const qtyString = String(row.item.quantity).replace(',', '.');
            const qty = parseFloat(qtyString) || 0;
            totals[p.supplier] += (p.price * qty);
@@ -1272,8 +1265,8 @@ const ResultsView = ({ quote, setView }) => {
     comparison.forEach(row => {
         if(row.winner === supplierName) {
             hasItems = true;
-            // Remove colchetes e total estimado, mantendo apenas item e preço
-            msg += `${row.item.name} - ${row.item.quantity}${row.item.unit} (R$ ${row.minPrice.toFixed(2)})\n`;
+            const price = isFinite(row.minPrice) ? row.minPrice.toFixed(2) : "0.00";
+            msg += `${row.item.name} - ${row.item.quantity}${row.item.unit} (R$ ${price})\n`;
         }
     });
 
@@ -1302,7 +1295,8 @@ const ResultsView = ({ quote, setView }) => {
         exportText += `PEDIDO PARA: ${supplier.toUpperCase()}\n`;
         exportText += `-----------------------------------\n`;
         winsBySupplier[supplier].forEach(item => {
-            exportText += `${item.name} - ${item.qty}${item.unit} (R$ ${item.price.toFixed(2)})\n`;
+            const price = isFinite(item.price) ? item.price.toFixed(2) : "0.00";
+            exportText += `${item.name} - ${item.qty}${item.unit} (R$ ${price})\n`;
         });
         exportText += `\n`;
     });
@@ -1402,7 +1396,8 @@ const ResultsView = ({ quote, setView }) => {
                 .map(([supplier, total]) => {
                   const response = responses.find(r => r.supplierName === supplier);
                   const isFinal = response?.status === 'final';
-                  const isWinner = basketTotals.winnersCount[supplier] > 0;
+                  // const isWinner = basketTotals.winnersCount[supplier] > 0;
+                  const isWinner = (basketTotals.winnersCount[supplier] || 0) > 0;
                   
                   return (
                     <Card key={supplier} className={`p-4 border-l-4 ${isFinal ? 'border-l-green-500 bg-green-50/30' : 'border-l-blue-500'} relative overflow-visible group`}>
@@ -1465,7 +1460,7 @@ const ResultsView = ({ quote, setView }) => {
                              <div className="flex flex-col items-center">
                                  <span className="font-bold text-yellow-700">{row.winner}</span>
                                  <span className="text-xs font-bold bg-green-100 text-green-700 px-2 rounded-full">
-                                     R$ {row.minPrice?.toFixed(2)}
+                                     R$ {isFinite(row.minPrice) ? row.minPrice.toFixed(2) : '-'}
                                  </span>
                              </div>
                          ) : <span className="text-gray-300">-</span>}
