@@ -17,7 +17,6 @@ import {
   getDocs
 } from 'firebase/firestore';
 
-// ⚠️ NO SEU COMPUTADOR: Descomente a linha abaixo para a câmera funcionar!
 import { Html5Qrcode } from 'html5-qrcode';
 
 import { 
@@ -1148,225 +1147,354 @@ const SupplierView = ({ supplierAuth, setView }) => {
   );
 };
 
-// 5. Resultados — VISUAL DE SISTEMA DE MERCADO
+// 5. Resultados (BLINDAGEM TOTAL CONTRA ERROS)
 const ResultsView = ({ quote, setView }) => {
   const [responses, setResponses] = useState([]);
   const [loading, setLoading] = useState(true);
+  const [visibleSuppliers, setVisibleSuppliers] = useState([]); 
+  const [showFilters, setShowFilters] = useState(false);
+  const [showCredentials, setShowCredentials] = useState(false);
 
   useEffect(() => {
-    if (!quote) return;
-
-    const unsub = onSnapshot(getCollectionRef('responses'), (snapshot) => {
-      const all = snapshot.docs.map(d => ({ id: d.id, ...d.data() }));
-      setResponses(all.filter(r => r.quoteId === quote.id));
+    if(!quote) return;
+    const q = query(getCollectionRef('responses'));
+    const unsub = onSnapshot(q, (snapshot) => {
+      const allResponses = snapshot.docs.map(d => ({ id: d.id, ...d.data() }));
+      const filtered = allResponses.filter(r => r.quoteId === quote.id);
+      setResponses(filtered);
       setLoading(false);
     });
-
     return () => unsub();
-  }, [quote]);
+  }, [quote]); 
 
-  if (!quote || loading) {
-    return (
-      <div className="flex h-screen items-center justify-center">
-        <Loader2 className="animate-spin text-green-600" size={32} />
-      </div>
-    );
-  }
+  // Novo: Atualiza filtros de forma segura quando chegam novas respostas
+  useEffect(() => {
+      if (responses.length > 0) {
+          const currentNames = responses.map(r => r.supplierName);
+          setVisibleSuppliers(prev => {
+              // Mantém os já selecionados e adiciona novos que aparecerem
+              const unique = new Set([...prev, ...currentNames]);
+              return Array.from(unique);
+          });
+      }
+  }, [responses]);
 
-  // ---------- PROCESSAMENTO ----------
+  // Se não houver cotação carregada, mostra loading ou volta
+  if (!quote) return <div className="flex h-screen items-center justify-center"><Loader2 className="animate-spin text-blue-600" /></div>;
+
   const comparison = useMemo(() => {
-    if (!quote.items || responses.length === 0) return [];
+    // ⚠️ Proteção: Se quote não tem itens, retorna vazio (evita crash)
+    if (!quote.items || !Array.isArray(quote.items) || responses.length === 0) return [];
+    
+    // Filtra itens inválidos que podem ter sido salvos incorretamente
+    const validItems = quote.items.filter(i => i && i.name);
 
-    return quote.items.map((item, idx) => {
-      let min = Infinity;
+    return validItems.map((item, idx) => {
+      let minPrice = Infinity;
       let winner = null;
 
-      const prices = responses.map(r => {
-        const raw = r.prices?.[item.id] ?? r.prices?.[idx];
-        const value = raw ? parseFloat(String(raw).replace(',', '.')) : null;
+      const priceData = responses.map(r => {
+        const safePrices = r.prices || {};
+        const safeNotes = r.notes || {};
+        
+        let raw = undefined;
+        // Lógica Híbrida: Tenta pegar por ID (novo), depois pelo index (legado)
+        if (item.id && safePrices[item.id] !== undefined) raw = safePrices[item.id];
+        else if (safePrices[idx] !== undefined) raw = safePrices[idx];
+        
+        let note = undefined;
+        if (item.id && safeNotes[item.id]) note = safeNotes[item.id];
+        else if (safeNotes[idx]) note = safeNotes[idx];
+        
+        if (typeof note === 'object') note = JSON.stringify(note); 
+        if (note === undefined) note = null;
+        
+        if (!raw) return { supplier: r.supplierName, price: null, raw: '-', note };
+        
+        // ⚠️ Proteção Crítica: Converte para string antes de usar replace
+        const rawString = String(raw).trim();
+        const val = parseFloat(rawString.replace(',', '.'));
 
-        if (value !== null && !isNaN(value) && value < min) {
-          min = value;
-          winner = r.supplierName;
+        if (!isNaN(val)) {
+          if (val < minPrice) {
+            minPrice = val;
+            winner = r.supplierName;
+          }
+          return { supplier: r.supplierName, price: val, raw: rawString, note };
         }
-
-        return {
-          supplier: r.supplierName,
-          value,
-          raw
-        };
+        return { supplier: r.supplierName, price: null, raw: rawString, note };
       });
 
       return {
-        item,
-        prices,
-        minPrice: min === Infinity ? null : min,
-        winner
+        item: item,
+        prices: priceData,
+        winner: winner,
+        minPrice: minPrice === Infinity ? null : minPrice
       };
     });
   }, [quote, responses]);
 
-  const totals = {};
-  const wins = {};
+  const basketTotals = useMemo(() => {
+    const totals = {};
+    const winnersCount = {}; 
 
-  responses.forEach(r => {
-    totals[r.supplierName] = 0;
-    wins[r.supplierName] = 0;
-  });
-
-  comparison.forEach(row => {
-    if (row.winner) wins[row.winner] += 1;
-
-    row.prices.forEach(p => {
-      if (p.value) {
-        const qty = parseFloat(row.item.quantity) || 1;
-        totals[p.supplier] += p.value * qty;
-      }
+    responses.forEach(r => {
+      totals[r.supplierName] = 0;
+      winnersCount[r.supplierName] = 0;
     });
-  });
 
-  const sortedSuppliers = Object.entries(totals)
-    .sort((a, b) => a[1] - b[1]);
+    comparison.forEach(row => {
+      if(row.winner) {
+         winnersCount[row.winner] = (winnersCount[row.winner] || 0) + 1;
+      }
+      row.prices.forEach(p => {
+        if (p.price && row.item.quantity) {
+           const qtyString = String(row.item.quantity).replace(',', '.');
+           const qty = parseFloat(qtyString) || 0;
+           totals[p.supplier] += (p.price * qty);
+        }
+      });
+    });
+    return { totals, winnersCount };
+  }, [comparison, responses]);
 
-  // ---------- UI ----------
+  const handleWhatsApp = (supplierName) => {
+    let msg = `RESULTADO COTAÇÃO TAGAVAS: ${quote.title}\n\n`;
+    msg += `-----------------------------------\n`;
+    msg += `PEDIDO PARA: ${supplierName.toUpperCase()}\n`;
+    msg += `-----------------------------------\n`;
+    
+    let hasItems = false;
+    comparison.forEach(row => {
+        if(row.winner === supplierName) {
+            hasItems = true;
+            const price = isFinite(row.minPrice) ? row.minPrice.toFixed(2) : "0.00";
+            msg += `${row.item.name} - ${row.item.quantity}${row.item.unit} (R$ ${price})\n`;
+        }
+    });
+
+    if (!hasItems) return alert("Este fornecedor não venceu nenhum item.");
+    
+    const url = `https://wa.me/?text=${encodeURIComponent(msg)}`;
+    window.open(url, '_blank');
+  };
+
+  const handleExport = () => {
+    let exportText = `RESULTADO COTAÇÃO TAGAVAS: ${quote.title}\n\n`;
+    const winsBySupplier = {};
+    comparison.forEach(row => {
+        if(row.winner) {
+            if(!winsBySupplier[row.winner]) winsBySupplier[row.winner] = [];
+            winsBySupplier[row.winner].push({
+                name: row.item.name,
+                qty: row.item.quantity,
+                unit: row.item.unit,
+                price: row.minPrice
+            });
+        }
+    });
+    Object.keys(winsBySupplier).forEach(supplier => {
+        exportText += `-----------------------------------\n`;
+        exportText += `PEDIDO PARA: ${supplier.toUpperCase()}\n`;
+        exportText += `-----------------------------------\n`;
+        winsBySupplier[supplier].forEach(item => {
+            const price = isFinite(item.price) ? item.price.toFixed(2) : "0.00";
+            exportText += `${item.name} - ${item.qty}${item.unit} (R$ ${price})\n`;
+        });
+        exportText += `\n`;
+    });
+    const element = document.createElement("a");
+    const file = new Blob([exportText], {type: 'text/plain'});
+    element.href = URL.createObjectURL(file);
+    element.download = `pedido-${quote.title.replace(/\s+/g, '_')}.txt`;
+    document.body.appendChild(element); 
+    element.click();
+    document.body.removeChild(element);
+  };
+
+  const toggleSupplierVisibility = (name) => {
+      setVisibleSuppliers(prev => 
+        prev.includes(name) ? prev.filter(s => s !== name) : [...prev, name]
+      );
+  };
+
   return (
-    <div className="min-h-screen bg-gray-100">
-      {/* HEADER */}
-      <header className="bg-white border-b sticky top-0 z-10">
-        <div className="max-w-6xl mx-auto px-6 py-4 flex items-center gap-3">
-          <button
-            onClick={() => setView('admin_dashboard')}
-            className="p-2 hover:bg-gray-100 rounded-full"
-          >
-            <ArrowLeft size={20} />
-          </button>
+    <div className="min-h-screen bg-gray-50 flex flex-col">
+       <header className="bg-white border-b sticky top-0 z-10 shadow-sm print:hidden">
+        <div className="w-full px-4 py-4 flex flex-col gap-4">
+           <div className="flex items-center justify-between">
+                <div className="flex items-center gap-3">
+                    <button onClick={() => setView('admin_dashboard')} className="p-2 -ml-2 text-gray-600 hover:bg-gray-100 rounded-full">
+                    <ArrowLeft size={20} />
+                    </button>
+                    <div>
+                    <h1 className="font-bold text-lg text-gray-900">{quote?.title}</h1>
+                    <p className="text-xs text-gray-500">{responses.length} fornecedores responderam</p>
+                    </div>
+                </div>
+                <div className="flex gap-2">
+                    <Button variant="ghost" className="text-sm px-3" onClick={() => setShowCredentials(!showCredentials)} title="Ver Senhas dos Fornecedores">
+                        {showCredentials ? <EyeOff size={18} /> : <Eye size={18} />}
+                    </Button>
+                    <Button variant="secondary" className="text-sm px-3" onClick={() => setShowFilters(!showFilters)} icon={Filter}>
+                         Filtros
+                    </Button>
+                    <Button variant="success" className="text-sm px-3 hidden sm:flex" onClick={handleExport} icon={Download}>
+                        Exportar
+                    </Button>
+                </div>
+           </div>
+           
+           {showCredentials && (
+             <div className="bg-yellow-50 border border-yellow-200 rounded-lg p-3 animate-in slide-in-from-top-2">
+               <h3 className="text-xs font-bold text-yellow-800 uppercase mb-2 flex items-center gap-2">
+                 <Key size={14}/> Senhas dos Fornecedores (Uso Interno)
+               </h3>
+               <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-2">
+                 {responses.map(r => (
+                   <div key={r.id} className="text-sm bg-white p-2 rounded border border-yellow-100 flex justify-between">
+                     <span className="font-medium text-gray-700">{r.supplierName}</span>
+                     <span className="font-mono text-gray-500 bg-gray-100 px-1 rounded">{r.password || 'Sem senha'}</span>
+                   </div>
+                 ))}
+               </div>
+             </div>
+           )}
 
-          <div>
-            <h1 className="text-2xl font-extrabold text-gray-900">
-              {quote.title}
-            </h1>
-            <p className="text-sm text-gray-500">
-              Resultado da cotação • {responses.length} fornecedor(es)
-            </p>
-          </div>
+           {showFilters && (
+               <div className="flex gap-2 flex-wrap bg-gray-50 p-3 rounded-lg border border-gray-200 animate-in slide-in-from-top-2">
+                   <span className="text-xs font-bold text-gray-500 w-full">Mostrar Colunas:</span>
+                   {responses.map(r => (
+                       <button 
+                        key={r.id}
+                        onClick={() => toggleSupplierVisibility(r.supplierName)}
+                        className={`px-3 py-1 text-xs rounded-full border ${visibleSuppliers.includes(r.supplierName) ? 'bg-blue-100 border-blue-200 text-blue-700' : 'bg-white border-gray-200 text-gray-500'}`}
+                       >
+                           {r.supplierName} {r.status === 'final' && '✅'}
+                       </button>
+                   ))}
+               </div>
+           )}
         </div>
       </header>
 
-      <main className="max-w-6xl mx-auto p-6 space-y-8">
-        {/* ===== DASHBOARD DE TOTAIS ===== */}
-        <section>
-          <h2 className="text-sm font-bold text-gray-500 uppercase mb-3">
-            Total por fornecedor
-          </h2>
-
-          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
-            {sortedSuppliers.map(([supplier, total], index) => {
-              const isBest = index === 0;
-
-              return (
-                <div
-                  key={supplier}
-                  className={`
-                    rounded-2xl p-5 shadow
-                    ${isBest
-                      ? 'bg-gradient-to-br from-green-600 to-green-500 text-white'
-                      : 'bg-white'}
-                  `}
-                >
-                  <p className={`text-xs uppercase font-bold ${isBest ? 'text-green-100' : 'text-gray-400'}`}>
-                    Fornecedor
-                  </p>
-
-                  <h3 className="font-bold text-lg truncate">
-                    {supplier}
-                  </h3>
-
-                  <p className={`mt-2 text-3xl font-extrabold ${isBest ? 'text-white' : 'text-green-600'}`}>
-                    {total.toLocaleString('pt-BR', {
-                      style: 'currency',
-                      currency: 'BRL'
-                    })}
-                  </p>
-
-                  <p className={`mt-1 text-xs ${isBest ? 'text-green-100' : 'text-gray-400'}`}>
-                    {wins[supplier]} item(ns) com menor preço
-                  </p>
-
-                  {isBest && (
-                    <button
-                      className="mt-4 w-full flex items-center justify-center gap-2 bg-white text-green-700 font-bold py-2 rounded-xl shadow hover:bg-green-50 transition"
-                    >
-                      <MessageCircle size={18} />
-                      Enviar pedido
-                    </button>
-                  )}
-                </div>
-              );
-            })}
+      <main className="flex-1 overflow-auto p-4 space-y-6">
+        {loading ? (
+          <div className="flex justify-center py-10"><Loader2 className="animate-spin" /></div>
+        ) : responses.length === 0 ? (
+          <div className="text-center py-20 text-gray-500">
+            <Store size={48} className="mx-auto mb-4 opacity-20" />
+            <h3 className="text-lg font-medium">Ainda sem respostas</h3>
+            <p>Envie o código <strong>{quote.id}</strong> para seus fornecedores.</p>
           </div>
-        </section>
+        ) : (
+          <div className="space-y-8">
+             {/* Totals */}
+            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
+              {Object.entries(basketTotals.totals)
+                .filter(([name]) => visibleSuppliers.includes(name))
+                .map(([supplier, total]) => {
+                  const response = responses.find(r => r.supplierName === supplier);
+                  const isFinal = response?.status === 'final';
+                  const isWinner = (basketTotals.winnersCount[supplier] || 0) > 0;
+                  
+                  return (
+                    <Card key={supplier} className={`p-4 border-l-4 ${isFinal ? 'border-l-green-500 bg-green-50/30' : 'border-l-blue-500'} relative overflow-visible group`}>
+                    <div className="flex justify-between items-start">
+                        <div>
+                            <p className="text-xs text-gray-500 uppercase font-bold">Total Cotação</p>
+                            <h3 className="font-bold text-gray-800 truncate flex items-center gap-1">
+                                {supplier}
+                                {isFinal && <CheckCircle size={14} className="text-green-600" />}
+                            </h3>
+                        </div>
+                        {isFinal ? 
+                            <span className="text-[10px] bg-green-100 text-green-700 px-2 py-0.5 rounded-full font-bold uppercase">Finalizado</span> :
+                            <span className="text-[10px] bg-yellow-100 text-yellow-700 px-2 py-0.5 rounded-full font-bold uppercase">Rascunho</span>
+                        }
+                    </div>
+                    <p className="text-2xl font-bold text-blue-600 mt-2">
+                        {total.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })}
+                    </p>
+                    
+                    {/* Botão WhatsApp só aparece se venceu algo */}
+                    {isWinner && (
+                        <button 
+                            onClick={() => handleWhatsApp(supplier)}
+                            className="absolute -bottom-3 -right-3 bg-[#25D366] text-white p-2 rounded-full shadow-lg hover:bg-[#128C7E] transition-transform hover:scale-110 flex items-center gap-1 text-xs font-bold pr-3"
+                            title="Enviar pedido no WhatsApp"
+                        >
+                            <MessageCircle size={16} /> Pedir
+                        </button>
+                    )}
+                    </Card>
+                  );
+              })}
+            </div>
 
-        {/* ===== TABELA ===== */}
-        <section>
-          <h2 className="text-sm font-bold text-gray-500 uppercase mb-3">
-            Comparação por produto
-          </h2>
-
-          <div className="bg-white rounded-2xl shadow border overflow-x-auto">
-            <table className="w-full text-sm">
-              <thead className="bg-gray-100 text-gray-600 uppercase text-xs">
-                <tr>
-                  <th className="p-4 text-left">Produto</th>
-                  <th className="p-4 text-center">Vencedor</th>
-                  {responses.map(r => (
-                    <th key={r.id} className="p-4 text-center">
-                      {r.supplierName}
-                    </th>
-                  ))}
-                </tr>
-              </thead>
-
-              <tbody className="divide-y">
-                {comparison.map((row, i) => (
-                  <tr key={i} className="hover:bg-gray-50">
-                    <td className="p-4 font-medium">
-                      {row.item.name}
-                      <div className="text-xs text-gray-400">
-                        {row.item.quantity} {row.item.unit}
-                      </div>
-                    </td>
-
-                    <td className="p-4 text-center">
-                      {row.winner ? (
-                        <span className="px-3 py-1 bg-green-600 text-white rounded-full text-xs font-bold">
-                          {row.winner}
-                        </span>
-                      ) : '-'}
-                    </td>
-
-                    {row.prices.map((p, idx) => (
-                      <td
-                        key={idx}
-                        className={`p-4 text-center ${
-                          row.winner === p.supplier ? 'bg-green-50 font-bold text-green-700' : ''
-                        }`}
-                      >
-                        {p.value
-                          ? `R$ ${p.value.toFixed(2)}`
-                          : '-'}
-                      </td>
+            {/* Table */}
+            <div className="bg-white rounded-xl shadow-sm border overflow-hidden overflow-x-auto">
+              <table className="w-full text-sm text-left">
+                <thead className="bg-gray-50 text-gray-700 font-bold border-b">
+                  <tr>
+                    <th className="p-4 min-w-[200px] sticky left-0 bg-gray-50 border-r z-10">Produto</th>
+                    <th className="p-4 min-w-[150px] text-center bg-yellow-50 text-yellow-800 border-r border-yellow-100">🏆 Vencedor</th>
+                    {responses.filter(r => visibleSuppliers.includes(r.supplierName)).map(r => (
+                      <th key={r.id} className="p-4 min-w-[120px] text-center">
+                          {r.supplierName}
+                          {r.status === 'final' && <span className="ml-1 text-green-500" title="Finalizado">●</span>}
+                      </th>
                     ))}
                   </tr>
-                ))}
-              </tbody>
-            </table>
+                </thead>
+                <tbody className="divide-y">
+                  {comparison.map((row, i) => (
+                    <tr key={i} className="hover:bg-gray-50/50">
+                      <td className="p-4 sticky left-0 bg-white border-r font-medium text-gray-800 z-10">
+                        {row.item.name}
+                        <div className="text-xs text-gray-400 font-normal">{row.item.quantity} {row.item.unit}</div>
+                      </td>
+                      <td className="p-4 text-center bg-yellow-50/30 border-r border-yellow-100">
+                         {row.winner ? (
+                             <div className="flex flex-col items-center">
+                                 <span className="font-bold text-yellow-700">{row.winner}</span>
+                                 <span className="text-xs font-bold bg-green-100 text-green-700 px-2 rounded-full">
+                                     R$ {isFinite(row.minPrice) ? row.minPrice.toFixed(2) : '-'}
+                                 </span>
+                             </div>
+                         ) : <span className="text-gray-300">-</span>}
+                      </td>
+                      {row.prices
+                        .filter(p => visibleSuppliers.includes(p.supplier))
+                        .map((p, idx) => {
+                        const isWinner = row.winner === p.supplier;
+                        return (
+                          <td key={idx} className={`p-4 text-center border-l relative ${isWinner ? 'bg-green-50' : ''}`}>
+                            <div className={`font-medium ${isWinner ? 'text-green-700 font-bold' : 'text-gray-600'}`}>
+                               {p.raw === '-' ? '-' : `R$ ${p.raw}`}
+                            </div>
+                            {p.note && (
+                                <div className="group absolute top-1 right-1">
+                                    <MessageSquare size={14} className="text-blue-400 cursor-help" />
+                                    <div className="hidden group-hover:block absolute bottom-full right-0 w-48 p-2 bg-gray-800 text-white text-xs rounded shadow-lg z-20 mb-1 text-left">
+                                        Obs: {p.note}
+                                    </div>
+                                </div>
+                            )}
+                          </td>
+                        );
+                      })}
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
           </div>
-        </section>
+        )}
       </main>
     </div>
   );
 };
-
 
 // --- App Principal ---
 
