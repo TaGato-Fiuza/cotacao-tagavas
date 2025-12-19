@@ -64,6 +64,7 @@ const firebaseConfig = typeof __firebase_config !== 'undefined' ? JSON.parse(__f
   appId: "1:907640755544:web:bf6a6663f6e427a944412d"
 };
 
+// Se tiver Token do Cosmos, coloque aqui
 const COSMOS_API_TOKEN = ""; 
 
 const app = initializeApp(firebaseConfig);
@@ -78,7 +79,6 @@ const ADMIN_USER_HASH = "TWVyY2FkbyBUYWdhdmFz";
 const ADMIN_PASS_HASH = "VGFnYXZhc0AyMDI4NzQ=";
 
 // --- Helpers de Banco de Dados ---
-// Centraliza a criação de referências para evitar erros de caminho
 const getCollectionRef = (collectionName) => {
   return collection(db, 'artifacts', appId, 'public', 'data', collectionName);
 };
@@ -399,7 +399,7 @@ const AdminDashboard = ({ userId, setView, setCurrentQuote }) => {
       setLoading(false);
     }, (error) => {
       console.error("Erro no snapshot:", error);
-      setLoading(false); // Evita loop infinito de carregamento
+      setLoading(false);
     });
     return () => unsub();
   }, []);
