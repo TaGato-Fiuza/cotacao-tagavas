@@ -17,7 +17,7 @@ import {
   getDocs
 } from 'firebase/firestore';
 
-// ⚠️ PARA A CÂMERA FUNCIONAR: REMOVA AS DUAS BARRAS (//) DO INÍCIO DA LINHA ABAIXO NO SEU VS CODE
+// ⚠️ IMPORTANTE: DESCOMENTE A LINHA ABAIXO NO SEU VS CODE PARA A CÂMERA FUNCIONAR!
 import { Html5Qrcode } from 'html5-qrcode'; 
 
 import { 
@@ -170,12 +170,14 @@ const BarcodeScanner = ({ onDetected, onClose }) => {
           aspectRatio: 1.0 
         };
 
+        // Tenta iniciar a câmera com configurações para focar melhor
         await html5QrCode.start(
           { facingMode: "environment" }, 
           config,
           (decodedText) => {
             if (isMounted.current) {
                 onDetected(decodedText);
+                // Para a câmera suavemente após leitura
                 html5QrCode.stop().then(() => html5QrCode.clear()).catch(console.error);
             }
           },
@@ -757,6 +759,11 @@ const CreateQuote = ({ userId, setView, editingQuote }) => {
     const codeToSearch = manualCode || barcode.trim();
     if(!codeToSearch) return;
 
+    // Feedback imediato de leitura
+    if (manualCode) {
+        try { new Audio('https://codeskulptor-demos.commondatastorage.googleapis.com/pang/pop.mp3').play(); } catch(e){}
+    }
+
     setIsScanning(true);
     const productName = await fetchProductMetadata(codeToSearch);
     
@@ -769,11 +776,13 @@ const CreateQuote = ({ userId, setView, editingQuote }) => {
             barcode: codeToSearch 
         }]);
         setBarcode('');
-        if(showCamera) setShowCamera(false);
-        try { new Audio('https://codeskulptor-demos.commondatastorage.googleapis.com/pang/pop.mp3').play(); } catch(e){}
     } else {
-        if(!showCamera) alert("Produto não encontrado. Digite o nome.");
+        alert(`Produto não encontrado (Código: ${codeToSearch}).\nPor favor, insira o nome manualmente.`);
     }
+    
+    // Fecha a câmera em ambos os casos para não travar a tela
+    if(showCamera) setShowCamera(false);
+    
     setIsScanning(false);
   };
 
