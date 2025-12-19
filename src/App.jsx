@@ -17,7 +17,7 @@ import {
   getDocs
 } from 'firebase/firestore';
 
-// ⚠️ IMPORTANTE: DESCOMENTE A LINHA ABAIXO NO SEU VS CODE PARA A CÂMERA FUNCIONAR!
+// ⚠️ PARA A CÂMERA FUNCIONAR: REMOVA AS DUAS BARRAS (//) DO INÍCIO DA LINHA ABAIXO NO SEU VS CODE
 import { Html5Qrcode } from 'html5-qrcode'; 
 
 import { 
@@ -57,7 +57,6 @@ import {
 } from 'lucide-react';
 
 // --- Configuração Firebase ---
-// Usa a config do ambiente se existir (Preview), senão usa a SUA oficial (Produção/Local)
 const firebaseConfig = typeof __firebase_config !== 'undefined' ? JSON.parse(__firebase_config) : {
   apiKey: "AIzaSyCDPZvnsEmhTmncnEeShNCy7hAHDMMRQXA",
   authDomain: "cotacaotagavas.firebaseapp.com",
@@ -67,14 +66,12 @@ const firebaseConfig = typeof __firebase_config !== 'undefined' ? JSON.parse(__f
   appId: "1:907640755544:web:bf6a6663f6e427a944412d"
 };
 
-// Se tiver Token do Cosmos, coloque aqui
 const COSMOS_API_TOKEN = ""; 
 
 const app = initializeApp(firebaseConfig);
 const auth = getAuth(app);
 const db = getFirestore(app);
 
-// GARANTIA: appId seguro e sem caracteres estranhos
 const rawAppId = typeof __app_id !== 'undefined' ? __app_id : 'cotacao-tagavas';
 const appId = rawAppId.replace(/[^a-zA-Z0-9-_]/g, ''); 
 
@@ -89,7 +86,6 @@ const getCollectionRef = (collectionName) => {
 const getDocRef = (collectionName, docId) => {
   return doc(db, 'artifacts', appId, 'public', 'data', collectionName, docId);
 };
-
 
 // --- Componentes UI Reutilizáveis ---
 
@@ -140,84 +136,84 @@ const Input = ({ label, value, onChange, placeholder, type = "text", className =
   </div>
 );
 
-// --- Componente de Scanner REAL (Otimizado) ---
+// --- Componente de Scanner REAL ---
 const BarcodeScanner = ({ onDetected, onClose }) => {
   const scannerRef = useRef(null);
+  const isMounted = useRef(true);
 
   useEffect(() => {
+    isMounted.current = true;
     let html5QrCode;
-    
-    const startScanner = async () => {
-      try {
-        const Html5QrcodeLib = window.Html5Qrcode || (await import('html5-qrcode').catch(()=>null))?.Html5Qrcode;
 
-        if (!Html5QrcodeLib) {
-          alert("Biblioteca de Câmera não encontrada. Verifique se descomentou o import!");
+    const startScanner = async () => {
+      // Pequeno delay para garantir que o elemento DOM "reader" exista
+      await new Promise(r => setTimeout(r, 100));
+
+      if (!document.getElementById("reader")) return;
+
+      try {
+        // Tenta usar a classe importada globalmente ou via window (fallback)
+        // No seu PC, ao descomentar o import, 'Html5Qrcode' estará disponível diretamente.
+        const ScannerClass = window.Html5Qrcode || (typeof Html5Qrcode !== 'undefined' ? Html5Qrcode : null);
+
+        if (!ScannerClass) {
+          alert("Biblioteca de Câmera não detectada. Você descomentou a linha 21?");
           return;
         }
 
-        html5QrCode = new Html5QrcodeLib("reader");
+        html5QrCode = new ScannerClass("reader");
         scannerRef.current = html5QrCode;
 
-        // Configuração otimizada para performance
         const config = { 
-          fps: 15, // Aumentado para leitura mais rápida
+          fps: 15, 
           qrbox: { width: 250, height: 150 },
           aspectRatio: 1.0 
         };
 
-        // Configurações avançadas de câmera (Tenta pegar HD para melhor foco)
-        const cameraConfig = { 
-            facingMode: "environment",
-            focusMode: "continuous", // Tenta forçar foco continuo se suportado
-            width: { min: 640, ideal: 1280, max: 1920 },
-            height: { min: 480, ideal: 720, max: 1080 } 
-        };
-
         await html5QrCode.start(
-          cameraConfig, 
+          { facingMode: "environment" }, 
           config,
           (decodedText) => {
-            onDetected(decodedText);
-            html5QrCode.stop().catch(console.error);
+            if (isMounted.current) {
+                onDetected(decodedText);
+                html5QrCode.stop().then(() => html5QrCode.clear()).catch(console.error);
+            }
           },
           (errorMessage) => { /* ignorar erros de frame */ }
         );
       } catch (err) {
-        console.error("Erro ao iniciar câmera:", err);
-        alert("Erro ao abrir câmera. Verifique permissões.");
-        onClose();
+        if (isMounted.current) {
+            console.error("Erro ao iniciar câmera:", err);
+            if (err?.name === 'NotAllowedError') {
+                alert("Permissão de câmera negada.");
+            } else {
+                alert("Erro na câmera: " + err);
+            }
+            onClose();
+        }
       }
     };
 
     startScanner();
 
     return () => {
-      if (html5QrCode && html5QrCode.isScanning) {
-        html5QrCode.stop().catch(() => {}).finally(() => html5QrCode.clear());
+      isMounted.current = false;
+      if (scannerRef.current && scannerRef.current.isScanning) {
+        scannerRef.current.stop().catch(() => {}).finally(() => {
+            scannerRef.current.clear();
+        });
       }
     };
-  }, [onDetected]);
+  }, []);
 
   return (
     <div className="fixed inset-0 z-[60] bg-black/95 flex flex-col items-center justify-center p-4">
       <div className="bg-white p-4 rounded-xl w-full max-w-sm relative">
-        <button 
-          onClick={onClose}
-          className="absolute top-2 right-2 text-gray-400 hover:text-gray-600 z-10"
-        >
-          <X size={24} />
-        </button>
+        <button onClick={onClose} className="absolute top-2 right-2 text-gray-400 hover:text-gray-600 z-10"><X size={24} /></button>
         <h3 className="text-center font-bold mb-4 text-gray-800">Lendo Código...</h3>
-        
         <div id="reader" className="w-full overflow-hidden rounded-lg bg-gray-100 min-h-[300px]"></div>
-        
-        <p className="text-xs text-center text-gray-500 mt-4">
-          Aproxime e afaste lentamente para focar.
-        </p>
-        <Button variant="secondary" onClick={onClose} className="w-full mt-4">
-          Cancelar
-        </Button>
+        <p className="text-xs text-center text-gray-500 mt-4">Aponte a câmera para o código de barras.</p>
+        <Button variant="secondary" onClick={onClose} className="w-full mt-4">Cancelar</Button>
       </div>
     </div>
   );
