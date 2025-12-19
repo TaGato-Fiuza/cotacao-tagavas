@@ -17,8 +17,8 @@ import {
   getDocs
 } from 'firebase/firestore';
 
-// ⚠️ IMPORTANTE: Se estiver usando no seu PC, você pode descomentar a linha abaixo para importar estaticamente
-import { Html5Qrcode } from 'html5-qrcode'; 
+// ⚠️ NO SEU COMPUTADOR: Descomente a linha abaixo para a câmera funcionar!
+import { Html5Qrcode } from 'html5-qrcode';
 
 import { 
   Plus, 
@@ -136,31 +136,30 @@ const Input = ({ label, value, onChange, placeholder, type = "text", className =
   </div>
 );
 
-// --- Componente de Scanner REAL ---
+// --- Componente de Scanner HÍBRIDO ---
 const BarcodeScanner = ({ onDetected, onClose }) => {
   const scannerRef = useRef(null);
   const isMounted = useRef(true);
+  const [useMock, setUseMock] = useState(false);
 
   useEffect(() => {
     isMounted.current = true;
+    
+    // Verifica se a classe Html5Qrcode está disponível (usuário descomentou o import)
+    // Se não estiver, usa o modo Mock (simulação)
+    if (typeof Html5Qrcode === 'undefined') {
+      setUseMock(true);
+      return;
+    }
+
     let html5QrCode;
 
     const startScanner = async () => {
-      await new Promise(r => setTimeout(r, 100));
-
+      await new Promise(r => setTimeout(r, 100)); // Delay para renderização
       if (!document.getElementById("reader")) return;
 
       try {
-        // Importação dinâmica para funcionar tanto no PC quanto no Preview
-        const ScannerClass = window.Html5Qrcode || (await import('html5-qrcode').catch(()=>null))?.Html5Qrcode;
-
-        if (!ScannerClass) {
-          alert("Biblioteca de Câmera não encontrada. Verifique o npm install html5-qrcode.");
-          onClose();
-          return;
-        }
-
-        html5QrCode = new ScannerClass("reader");
+        html5QrCode = new Html5Qrcode("reader");
         scannerRef.current = html5QrCode;
 
         const config = { 
@@ -183,11 +182,8 @@ const BarcodeScanner = ({ onDetected, onClose }) => {
       } catch (err) {
         if (isMounted.current) {
             console.error("Erro Câmera:", err);
-            if (err?.name === 'NotAllowedError') {
-                alert("Permita o uso da câmera no navegador.");
-            } else {
-                alert("Erro ao abrir câmera. Verifique se está em HTTPS.");
-            }
+            // Se der erro real (ex: permissão), fecha e avisa
+            alert("Erro ao acessar câmera: " + err);
             onClose();
         }
       }
@@ -205,6 +201,32 @@ const BarcodeScanner = ({ onDetected, onClose }) => {
     };
   }, []);
 
+  // Renderização do Modo Simulação (Preview ou sem biblioteca)
+  if (useMock) {
+    return (
+      <div className="fixed inset-0 z-[60] bg-black/95 flex flex-col items-center justify-center p-4">
+        <div className="bg-white p-4 rounded-xl w-full max-w-sm relative text-center">
+           <h3 className="font-bold mb-2">Simulação de Câmera</h3>
+           <div className="w-full h-48 bg-gray-900 rounded-lg flex items-center justify-center text-gray-500 mb-4">
+              [Visualização]
+           </div>
+           <p className="text-sm text-red-500 mb-4 font-medium">
+             A biblioteca 'html5-qrcode' não foi detectada.
+           </p>
+           <p className="text-xs text-gray-500 mb-4">
+             Para usar a câmera real, descomente a linha "import" no código.
+             Agora, simule uma leitura:
+           </p>
+           <Button className="w-full mb-2" onClick={() => onDetected("7894900011517")}>
+             Simular Leitura (Coca-Cola)
+           </Button>
+           <Button variant="secondary" className="w-full" onClick={onClose}>Cancelar</Button>
+        </div>
+      </div>
+    );
+  }
+
+  // Renderização do Modo Real
   return (
     <div className="fixed inset-0 z-[60] bg-black/95 flex flex-col items-center justify-center p-4">
       <div className="bg-white p-4 rounded-xl w-full max-w-sm relative">
@@ -753,22 +775,11 @@ const CreateQuote = ({ userId, setView, editingQuote }) => {
   };
 
   const handleBarcodeLookup = async (manualCode) => {
-    const isCameraScan = !!manualCode;
-    let codeToSearch = manualCode || barcode.trim();
+    const codeToSearch = manualCode || barcode.trim();
     if(!codeToSearch) return;
 
-    // Feedback imediato
-    try { new Audio('https://codeskulptor-demos.commondatastorage.googleapis.com/pang/pop.mp3').play(); } catch(e){}
-
     setIsScanning(true);
-    
-    let productName = await fetchProductMetadata(codeToSearch);
-
-    if (!productName) {
-        let alternativeCode = codeToSearch.startsWith('0') ? codeToSearch.substring(1) : '0' + codeToSearch;
-        productName = await fetchProductMetadata(alternativeCode);
-        if (productName) codeToSearch = alternativeCode; 
-    }
+    const productName = await fetchProductMetadata(codeToSearch);
     
     if(productName) {
         setItems(prev => [...prev, { 
@@ -779,15 +790,11 @@ const CreateQuote = ({ userId, setView, editingQuote }) => {
             barcode: codeToSearch 
         }]);
         setBarcode('');
-        if(isCameraScan) setShowCamera(false);
+        if(showCamera) setShowCamera(false);
+        try { new Audio('https://codeskulptor-demos.commondatastorage.googleapis.com/pang/pop.mp3').play(); } catch(e){}
     } else {
-        if(isCameraScan) setShowCamera(false);
-        // Pequeno delay para garantir que o modal feche antes do alert
-        setTimeout(() => {
-            alert(`Produto não encontrado (Código: ${codeToSearch}).\nPor favor, insira o nome manualmente.`);
-        }, 100);
+        if(!showCamera) alert("Produto não encontrado. Digite o nome.");
     }
-    
     setIsScanning(false);
   };
 
@@ -1188,15 +1195,18 @@ const ResultsView = ({ quote, setView }) => {
         
         if (!raw) return { supplier: r.supplierName, price: null, raw: '-', note };
         
-        const val = parseFloat(raw.replace(',', '.'));
+        // CORREÇÃO CRÍTICA: Converte para string antes de usar replace
+        const rawString = String(raw).trim();
+        const val = parseFloat(rawString.replace(',', '.'));
+
         if (!isNaN(val)) {
           if (val < minPrice) {
             minPrice = val;
             winner = r.supplierName;
           }
-          return { supplier: r.supplierName, price: val, raw: raw, note };
+          return { supplier: r.supplierName, price: val, raw: rawString, note };
         }
-        return { supplier: r.supplierName, price: null, raw: raw, note };
+        return { supplier: r.supplierName, price: null, raw: rawString, note };
       });
 
       return {
@@ -1241,6 +1251,7 @@ const ResultsView = ({ quote, setView }) => {
     comparison.forEach(row => {
         if(row.winner === supplierName) {
             hasItems = true;
+            // Remove colchetes e total estimado, mantendo apenas item e preço
             msg += `${row.item.name} - ${row.item.quantity}${row.item.unit} (R$ ${row.minPrice.toFixed(2)})\n`;
         }
     });
