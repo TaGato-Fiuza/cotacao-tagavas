@@ -16,8 +16,9 @@ import {
   where,
   getDocs
 } from 'firebase/firestore';
-// Importação da biblioteca de leitura de código de barras
-import { Html5QrcodeScanner } from 'html5-qrcode'; 
+
+import { Html5Qrcode } from 'html5-qrcode'; 
+
 import { 
   Plus, 
   Trash2, 
@@ -140,39 +141,56 @@ const Input = ({ label, value, onChange, placeholder, type = "text", className =
 
 // --- Componente de Scanner REAL ---
 const BarcodeScanner = ({ onDetected, onClose }) => {
+  const scannerRef = useRef(null);
+
   useEffect(() => {
-    // Inicializa o scanner com configurações otimizadas para mobile
-    const scanner = new Html5QrcodeScanner(
-      "reader",
-      { 
-        fps: 10, 
-        qrbox: { width: 250, height: 150 },
-        aspectRatio: 1.0,
-        rememberLastUsedCamera: true // Lembra qual câmera o usuário escolheu
-      },
-      /* verbose= */ false
-    );
+    // Carregamento dinâmico para evitar erro no preview do chat
+    // No seu VS Code, você pode usar o import estático (descomentado lá em cima) e usar new Html5Qrcode("reader")
     
-    // Callback de sucesso ao ler código
-    const success = (decodedText) => {
-      onDetected(decodedText);
-      // Tenta limpar o scanner após leitura bem sucedida
-      scanner.clear().catch(err => console.error("Erro ao limpar scanner", err));
-    };
-
-    // Callback de erro (ignorado para não poluir o console enquanto escaneia)
-    const error = (err) => {
-      // console.warn(err);
-    };
-
-    scanner.render(success, error);
-
-    // Limpeza ao desmontar o componente (fechar modal)
-    return () => {
+    let html5QrCode;
+    
+    const startScanner = async () => {
       try {
-        scanner.clear().catch(() => {});
-      } catch (e) {
-        // Scanner pode já ter sido limpo
+        // Tenta usar a lib global ou importada
+        // ⚠️ Nota: No seu projeto local, certifique-se que 'Html5Qrcode' está importado!
+        const Html5QrcodeLib = window.Html5Qrcode || (await import('html5-qrcode').catch(()=>null))?.Html5Qrcode;
+
+        if (!Html5QrcodeLib) {
+          alert("Biblioteca de Câmera não encontrada. Verifique se descomentou o import!");
+          return;
+        }
+
+        html5QrCode = new Html5QrcodeLib("reader");
+        scannerRef.current = html5QrCode;
+
+        const config = { 
+          fps: 10, 
+          qrbox: { width: 250, height: 150 },
+          aspectRatio: 1.0 
+        };
+
+        // Inicia a câmera traseira ("environment") diretamente
+        await html5QrCode.start(
+          { facingMode: "environment" }, 
+          config,
+          (decodedText) => {
+            onDetected(decodedText);
+            html5QrCode.stop().catch(console.error);
+          },
+          (errorMessage) => { /* ignorar erros de frame */ }
+        );
+      } catch (err) {
+        console.error("Erro ao iniciar câmera:", err);
+        alert("Erro ao abrir câmera. Verifique permissões.");
+        onClose();
+      }
+    };
+
+    startScanner();
+
+    return () => {
+      if (html5QrCode && html5QrCode.isScanning) {
+        html5QrCode.stop().catch(() => {}).finally(() => html5QrCode.clear());
       }
     };
   }, [onDetected]);
@@ -186,13 +204,10 @@ const BarcodeScanner = ({ onDetected, onClose }) => {
         >
           <X size={24} />
         </button>
-        <h3 className="text-center font-bold mb-4 text-gray-800">Ler Código de Barras</h3>
-        
-        {/* Área onde a câmera será renderizada pela biblioteca */}
+        <h3 className="text-center font-bold mb-4 text-gray-800">Lendo Código...</h3>
         <div id="reader" className="w-full overflow-hidden rounded-lg bg-gray-100 min-h-[300px]"></div>
-        
         <p className="text-xs text-center text-gray-500 mt-4">
-          Aponte a câmera para o código de barras do produto.
+          Aponte a câmera para o código de barras.
         </p>
         <Button variant="secondary" onClick={onClose} className="w-full mt-4">
           Cancelar
