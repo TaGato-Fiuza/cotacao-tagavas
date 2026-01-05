@@ -17,6 +17,7 @@ import {
   getDocs
 } from 'firebase/firestore';
 
+// ⚠️ NO SEU COMPUTADOR: Descomente a linha abaixo para a câmera funcionar!
 import { Html5Qrcode } from 'html5-qrcode';
 
 import { 
@@ -675,7 +676,7 @@ const AdminDashboard = ({ userId, setView, setCurrentQuote }) => {
                         <button 
                         onClick={(e) => {
                             e.stopPropagation();
-                            const text = `Olá! Cotação *${quote.title}*. Acesse o app e use o código: *${quote.id}*`;
+                            const text = `Olá! Cotação *${quote.title}*.\nAcesse o app: https://cotacao-tagavas.vercel.app/\nUse o código: *${quote.id}*`;
                             handleCopy(text);
                         }}
                         className="flex-1 flex items-center justify-center gap-2 py-2 text-blue-600 text-sm font-medium hover:bg-blue-50 rounded-lg transition-colors"
@@ -1269,7 +1270,7 @@ const ResultsView = ({ quote, setView }) => {
         if(row.winner === supplierName) {
             hasItems = true;
             const price = isFinite(row.minPrice) ? row.minPrice.toFixed(2) : "0.00";
-            msg += `${row.item.name} - ${row.item.quantity}${row.item.unit} (R$ ${price})\n`;
+            msg += `${row.item.name} - ${row.item.quantity} (R$ ${price})\n`;
         }
     });
 
@@ -1299,7 +1300,7 @@ const ResultsView = ({ quote, setView }) => {
         exportText += `-----------------------------------\n`;
         winsBySupplier[supplier].forEach(item => {
             const price = isFinite(item.price) ? item.price.toFixed(2) : "0.00";
-            exportText += `${item.name} - ${item.qty}${item.unit} (R$ ${price})\n`;
+            exportText += `${item.name} - ${item.qty} (R$ ${price})\n`;
         });
         exportText += `\n`;
     });
@@ -1333,6 +1334,7 @@ const ResultsView = ({ quote, setView }) => {
                     </div>
                 </div>
                 <div className="flex gap-2">
+                    {/* Botão de Senhas */}
                     <Button variant="ghost" className="text-sm px-3" onClick={() => setShowCredentials(!showCredentials)} title="Ver Senhas dos Fornecedores">
                         {showCredentials ? <EyeOff size={18} /> : <Eye size={18} />}
                     </Button>
@@ -1361,6 +1363,7 @@ const ResultsView = ({ quote, setView }) => {
              </div>
            )}
 
+           {/* Filtros */}
            {showFilters && (
                <div className="flex gap-2 flex-wrap bg-gray-50 p-3 rounded-lg border border-gray-200 animate-in slide-in-from-top-2">
                    <span className="text-xs font-bold text-gray-500 w-full">Mostrar Colunas:</span>
@@ -1452,7 +1455,7 @@ const ResultsView = ({ quote, setView }) => {
                     <tr key={i} className="hover:bg-gray-50/50">
                       <td className="p-4 sticky left-0 bg-white border-r font-medium text-gray-800 z-10">
                         {row.item.name}
-                        <div className="text-xs text-gray-400 font-normal">{row.item.quantity} {row.item.unit}</div>
+                        <div className="text-xs text-gray-400 font-normal">{row.item.quantity}</div>
                       </td>
                       <td className="p-4 text-center bg-yellow-50/30 border-r border-yellow-100">
                          {row.winner ? (
