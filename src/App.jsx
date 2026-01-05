@@ -676,7 +676,7 @@ const AdminDashboard = ({ userId, setView, setCurrentQuote }) => {
                         <button 
                         onClick={(e) => {
                             e.stopPropagation();
-                            const text = `Olá! Cotação *${quote.title}*.\nAcesse o app: https://cotacao-tagavas.vercel.app/\nUse o código: *${quote.id}*`;
+                            const text = `Olá! *${quote.title}*.\nAcesse o app: https://cotacao-tagavas.vercel.app/\nUse o código: *${quote.id}*`;
                             handleCopy(text);
                         }}
                         className="flex-1 flex items-center justify-center gap-2 py-2 text-blue-600 text-sm font-medium hover:bg-blue-50 rounded-lg transition-colors"
