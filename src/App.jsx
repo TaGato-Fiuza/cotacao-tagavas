@@ -18,7 +18,7 @@ import {
 } from 'firebase/firestore';
 
 // ⚠️ NO SEU COMPUTADOR: Descomente a linha abaixo para a câmera funcionar!
-// import { Html5Qrcode } from 'html5-qrcode';
+import { Html5Qrcode } from 'html5-qrcode';
 
 import { 
   Plus, 
@@ -909,24 +909,9 @@ const CreateQuote = ({ userId, setView, editingQuote }) => {
           />
           
           <div className="bg-blue-50 border border-blue-100 rounded-xl p-4">
-             <div className="flex items-center justify-between mb-2">
-                 <div className="flex items-center gap-2 text-blue-800 font-bold text-sm">
-                    <ScanBarcode size={18} />
-                    <span>Adicionar por Código</span>
-                 </div>
-                 {/* Botão de Importar Excel */}
-                 <div className="relative">
-                    <input 
-                        type="file" 
-                        accept=".xlsx, .xls" 
-                        onChange={handleImportExcel}
-                        className="hidden"
-                        id="excel-upload"
-                    />
-                    <label htmlFor="excel-upload" className="flex items-center gap-1 text-xs text-green-700 bg-green-100 px-2 py-1 rounded cursor-pointer hover:bg-green-200 transition-colors">
-                        <FileSpreadsheet size={14} /> Importar Excel
-                    </label>
-                 </div>
+             <div className="flex items-center gap-2 mb-2 text-blue-800 font-bold text-sm">
+                <ScanBarcode size={18} />
+                <span>Adicionar por Código de Barras</span>
              </div>
              <div className="flex gap-2 flex-wrap sm:flex-nowrap">
                 <input 
@@ -952,6 +937,7 @@ const CreateQuote = ({ userId, setView, editingQuote }) => {
                     <Camera size={18}/>
                 </Button>
              </div>
+             <p className="text-xs text-blue-600 mt-2">Use o leitor ou a câmera para adicionar itens auto.</p>
           </div>
         </Card>
 
@@ -1229,30 +1215,39 @@ const ResultsView = ({ quote, setView }) => {
     return () => unsub();
   }, [quote]); 
 
+  // Novo: Atualiza filtros de forma segura quando chegam novas respostas
   useEffect(() => {
       if (responses.length > 0) {
           const currentNames = responses.map(r => r.supplierName);
           setVisibleSuppliers(prev => {
+              // Mantém os já selecionados e adiciona novos que aparecerem
               const unique = new Set([...prev, ...currentNames]);
               return Array.from(unique);
           });
       }
   }, [responses]);
 
+  // Se não houver cotação carregada, mostra loading ou volta
   if (!quote) return <div className="flex h-screen items-center justify-center"><Loader2 className="animate-spin text-blue-600" /></div>;
 
   const comparison = useMemo(() => {
+    // ⚠️ Proteção: Se quote não tem itens, retorna vazio (evita crash)
     if (!quote.items || !Array.isArray(quote.items)) return [];
     
+    // Filtra itens inválidos que podem ter sido salvos incorretamente
     const validItems = quote.items.filter(i => i && i.name);
 
     return validItems.map((item, idx) => {
-      // 1. Coleta e normaliza os preços
+      let minPrice = Infinity;
+      let winner = null;
+
       const priceData = responses.map(r => {
+        // Robustez: garante que r.prices e r.notes existam (evita crash com dados antigos)
         const safePrices = r.prices || {};
         const safeNotes = r.notes || {};
         
         let raw = undefined;
+        // Lógica Híbrida: Tenta pegar por ID (novo), depois pelo index (legado)
         if (item.id && safePrices[item.id] !== undefined) raw = safePrices[item.id];
         else if (safePrices[idx] !== undefined) raw = safePrices[idx];
         
@@ -1265,41 +1260,24 @@ const ResultsView = ({ quote, setView }) => {
         
         if (!raw) return { supplier: r.supplierName, price: null, raw: '-', note };
         
+        // ⚠️ Proteção Crítica: Converte para string antes de usar replace
         const rawString = String(raw).trim();
         const val = parseFloat(rawString.replace(',', '.'));
 
         if (!isNaN(val)) {
+          if (val < minPrice) {
+            minPrice = val;
+            winner = r.supplierName;
+          }
           return { supplier: r.supplierName, price: val, raw: rawString, note };
         }
         return { supplier: r.supplierName, price: null, raw: rawString, note };
       });
 
-      // 2. Calcula o menor preço
-      // Filtra apenas preços válidos (maiores que zero)
-      const validPrices = priceData
-        .filter(p => p.price !== null && p.price > 0)
-        .map(p => p.price);
-        
-      let minPrice = Infinity;
-      if (validPrices.length > 0) {
-          minPrice = Math.min(...validPrices);
-      }
-
-      // 3. Determina vencedores (pode haver empate)
-      let winners = [];
-      if (minPrice !== Infinity) {
-          winners = priceData
-            .filter(p => p.price === minPrice)
-            .map(p => p.supplier);
-      }
-
-      const isTie = winners.length > 1;
-
       return {
         item: item,
         prices: priceData,
-        winners: winners, // Agora é um array
-        isTie: isTie,     // Flag de empate
+        winner: winner,
         minPrice: minPrice === Infinity ? null : minPrice
       };
     });
@@ -1315,13 +1293,12 @@ const ResultsView = ({ quote, setView }) => {
     });
 
     comparison.forEach(row => {
-      // Se houver vencedores, incrementa para todos (mesmo se empate)
-      row.winners.forEach(winnerName => {
-         winnersCount[winnerName] = (winnersCount[winnerName] || 0) + 1;
-      });
-
+      if(row.winner) {
+         winnersCount[row.winner] = (winnersCount[row.winner] || 0) + 1;
+      }
       row.prices.forEach(p => {
         if (p.price && row.item.quantity) {
+           // ⚠️ Proteção: Garante que quantity seja tratada como número
            const qtyString = String(row.item.quantity).replace(',', '.');
            const qty = parseFloat(qtyString) || 0;
            totals[p.supplier] += (p.price * qty);
@@ -1339,13 +1316,11 @@ const ResultsView = ({ quote, setView }) => {
     
     let hasItems = false;
     comparison.forEach(row => {
-        // Se o fornecedor está na lista de vencedores
-        if(row.winners.includes(supplierName)) {
+        if(row.winner === supplierName) {
             hasItems = true;
+            // Remove colchetes e total estimado, mantendo apenas item e preço
             const price = isFinite(row.minPrice) ? row.minPrice.toFixed(2) : "0.00";
-            // Adiciona aviso de empate se houver
-            const tieWarning = row.isTie ? " (EMPATE)" : "";
-            msg += `${row.item.name} - ${row.item.quantity} (R$ ${price})${tieWarning}\n`;
+            msg += `${row.item.quantity} ${row.item.unit || ''} - ${row.item.name} - (R$ ${price})\n`;
         }
     });
 
@@ -1357,35 +1332,28 @@ const ResultsView = ({ quote, setView }) => {
 
   const handleExport = () => {
     let exportText = `RESULTADO COTAÇÃO TAGAVAS: ${quote.title}\n\n`;
-    
-    // Agrupa por fornecedor vencedor
-    // Se houver empate, o item aparece na lista de TODOS os empatados
-    const itemsBySupplier = {};
-
+    const winsBySupplier = {};
     comparison.forEach(row => {
-        row.winners.forEach(winner => {
-            if (!itemsBySupplier[winner]) itemsBySupplier[winner] = [];
-            itemsBySupplier[winner].push({
+        if(row.winner) {
+            if(!winsBySupplier[row.winner]) winsBySupplier[row.winner] = [];
+            winsBySupplier[row.winner].push({
                 name: row.item.name,
                 qty: row.item.quantity,
-                price: row.minPrice,
-                isTie: row.isTie
+                unit: row.item.unit,
+                price: row.minPrice
             });
-        });
+        }
     });
-
-    Object.keys(itemsBySupplier).forEach(supplier => {
+    Object.keys(winsBySupplier).forEach(supplier => {
         exportText += `-----------------------------------\n`;
         exportText += `PEDIDO PARA: ${supplier.toUpperCase()}\n`;
         exportText += `-----------------------------------\n`;
-        itemsBySupplier[supplier].forEach(item => {
+        winsBySupplier[supplier].forEach(item => {
             const price = isFinite(item.price) ? item.price.toFixed(2) : "0.00";
-            const tieWarning = item.isTie ? " [EMPATE]" : "";
-            exportText += `${item.name} - ${item.qty} (R$ ${price})${tieWarning}\n`;
+            exportText += `${item.qty} ${item.unit || ''} - ${item.name} (R$ ${price})\n`;
         });
         exportText += `\n`;
     });
-
     const element = document.createElement("a");
     const file = new Blob([exportText], {type: 'text/plain'});
     element.href = URL.createObjectURL(file);
@@ -1416,6 +1384,7 @@ const ResultsView = ({ quote, setView }) => {
                     </div>
                 </div>
                 <div className="flex gap-2">
+                    {/* Botão de Senhas */}
                     <Button variant="ghost" className="text-sm px-3" onClick={() => setShowCredentials(!showCredentials)} title="Ver Senhas dos Fornecedores">
                         {showCredentials ? <EyeOff size={18} /> : <Eye size={18} />}
                     </Button>
@@ -1431,6 +1400,9 @@ const ResultsView = ({ quote, setView }) => {
            {/* Área de Senhas */}
            {showCredentials && (
              <div className="bg-yellow-50 border border-yellow-200 rounded-lg p-3 animate-in slide-in-from-top-2">
+               <h3 className="text-xs font-bold text-yellow-800 uppercase mb-2 flex items-center gap-2">
+                 <Key size={14}/> Senhas dos Fornecedores (Uso Interno)
+               </h3>
                <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-2">
                  {responses.map(r => (
                    <div key={r.id} className="text-sm bg-white p-2 rounded border border-yellow-100 flex justify-between">
@@ -1445,6 +1417,7 @@ const ResultsView = ({ quote, setView }) => {
            {/* Filtros */}
            {showFilters && (
                <div className="flex gap-2 flex-wrap bg-gray-50 p-3 rounded-lg border border-gray-200 animate-in slide-in-from-top-2">
+                   <span className="text-xs font-bold text-gray-500 w-full">Mostrar Colunas:</span>
                    {responses.map(r => (
                        <button 
                         key={r.id}
@@ -1528,7 +1501,7 @@ const ResultsView = ({ quote, setView }) => {
                             {row.isTie && <AlertTriangle size={16} className="text-yellow-600" />}
                             <div>
                                 <div className="font-medium text-gray-800">{row.item.name}</div>
-                                <div className="text-xs text-gray-400 font-normal">{row.item.quantity}</div>
+                                <div className="text-xs text-gray-400 font-normal">{row.item.quantity} {row.item.unit || ''}</div>
                             </div>
                         </div>
                       </td>
