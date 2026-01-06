@@ -1,3 +1,4 @@
+// ... (imports remain the same)
 import React, { useState, useEffect, useRef, useMemo } from 'react';
 import { initializeApp } from 'firebase/app';
 import { getAuth, signInAnonymously, onAuthStateChanged, signInWithCustomToken } from 'firebase/auth';
@@ -57,10 +58,11 @@ import {
   Camera, 
   FileText, 
   AlertTriangle,
-  FileSpreadsheet // <--- Adicionado aqui para corrigir o crash
+  FileSpreadsheet,
+  ListFilter // Adding Icon for the new filter toggle
 } from 'lucide-react';
 
-// --- Configuração Firebase ---
+// ... (Configuration and Helpers remain the same)
 const firebaseConfig = typeof __firebase_config !== 'undefined' ? JSON.parse(__firebase_config) : {
   apiKey: "AIzaSyCDPZvnsEmhTmncnEeShNCy7hAHDMMRQXA",
   authDomain: "cotacaotagavas.firebaseapp.com",
@@ -91,7 +93,7 @@ const getDocRef = (collectionName, docId) => {
   return doc(db, 'artifacts', appId, 'public', 'data', collectionName, docId);
 };
 
-// --- Componentes UI Reutilizáveis ---
+// ... (Component UI helpers remain the same: Card, Button, Input, BarcodeScanner)
 
 const Card = ({ children, className = "", onClick }) => (
   <div 
@@ -131,7 +133,7 @@ const Input = ({ label, value, onChange, placeholder, type = "text", className =
     {label && <label className="text-sm font-medium text-gray-600">{label}</label>}
     <input
       type={type}
-      value={value || ''} // Proteção contra undefined
+      value={value || ''} 
       onChange={onChange}
       onKeyDown={onKeyDown}
       placeholder={placeholder}
@@ -140,7 +142,6 @@ const Input = ({ label, value, onChange, placeholder, type = "text", className =
   </div>
 );
 
-// --- Componente de Scanner HÍBRIDO ---
 const BarcodeScanner = ({ onDetected, onClose }) => {
   const scannerRef = useRef(null);
   const isMounted = useRef(true);
@@ -149,19 +150,16 @@ const BarcodeScanner = ({ onDetected, onClose }) => {
   useEffect(() => {
     isMounted.current = true;
     
-    // Verifica se Html5Qrcode está disponível globalmente ou via import
-    // Como comentamos o import, ele cairá no mock, a menos que esteja no bundle
     if (typeof window.Html5Qrcode === 'undefined' && typeof Html5Qrcode === 'undefined') {
       setUseMock(true);
       return;
     }
 
-    // Pega a referência correta da classe
     const Html5QrcodeClass = window.Html5Qrcode || Html5Qrcode;
     let html5QrCode;
 
     const startScanner = async () => {
-      await new Promise(r => setTimeout(r, 100)); // Delay para renderização
+      await new Promise(r => setTimeout(r, 100)); 
       if (!document.getElementById("reader")) return;
 
       try {
@@ -183,13 +181,11 @@ const BarcodeScanner = ({ onDetected, onClose }) => {
                 html5QrCode.stop().then(() => html5QrCode.clear()).catch(console.error);
             }
           },
-          (errorMessage) => { /* ignora erros de frame */ }
+          (errorMessage) => { }
         );
       } catch (err) {
         if (isMounted.current) {
             console.error("Erro Câmera:", err);
-            // alert("Erro ao acessar câmara: " + err);
-            // Fallback para mock em caso de erro de permissão ou hardware
             setUseMock(true); 
         }
       }
@@ -237,12 +233,11 @@ const BarcodeScanner = ({ onDetected, onClose }) => {
   );
 };
 
-// --- Helper para gerar IDs ---
 const generateId = () => Math.random().toString(36).substring(2, 15);
 
-// --- Telas do Aplicativo ---
+// ... (Screens: HomeScreen, AdminLogin, SupplierLogin, AdminDashboard, CreateQuote, SupplierView remain unchanged until ResultsView)
 
-// 1. Tela Inicial
+// ... (Include previous components to keep file complete)
 const HomeScreen = ({ setView }) => {
   return (
     <div className="flex flex-col items-center justify-center min-h-screen p-6 bg-gradient-to-b from-blue-50 to-white">
@@ -300,7 +295,6 @@ const HomeScreen = ({ setView }) => {
   );
 };
 
-// 1.1 Login do Admin (Seguro)
 const AdminLogin = ({ setView }) => {
   const [username, setUsername] = useState("");
   const [password, setPassword] = useState("");
@@ -330,21 +324,9 @@ const AdminLogin = ({ setView }) => {
           <p className="text-sm text-gray-500">Entre com suas credenciais de administrador.</p>
         </div>
         <div className="space-y-4 text-left">
-          <Input 
-            label="Usuário" 
-            placeholder="Digite seu usuário" 
-            value={username} 
-            onChange={e => {setError(false); setUsername(e.target.value)}} 
-          />
-          <Input 
-            label="Senha" 
-            type="password" 
-            placeholder="••••" 
-            value={password} 
-            onChange={e => {setError(false); setPassword(e.target.value)}} 
-          />
+          <Input label="Usuário" placeholder="Digite seu usuário" value={username} onChange={e => {setError(false); setUsername(e.target.value)}} />
+          <Input label="Senha" type="password" placeholder="••••" value={password} onChange={e => {setError(false); setPassword(e.target.value)}} />
           {error && <p className="text-red-500 text-xs text-center font-medium">Usuário ou senha incorretos.</p>}
-          
           <Button className="w-full" onClick={handleLogin}>Entrar</Button>
           <button onClick={() => setView('home')} className="w-full text-sm text-gray-400 hover:text-gray-600 py-2">Voltar</button>
         </div>
@@ -353,7 +335,6 @@ const AdminLogin = ({ setView }) => {
   );
 };
 
-// 1.2 Login do Fornecedor
 const SupplierLogin = ({ setView, setSupplierAuth }) => {
   const [name, setName] = useState("");
   const [password, setPassword] = useState("");
@@ -362,26 +343,17 @@ const SupplierLogin = ({ setView, setSupplierAuth }) => {
 
   const handleLogin = async () => {
     if (!name.trim() || !password.trim() || !code.trim()) return alert("Preencha todos os campos");
-
     setLoading(true);
     try {
       const quoteRef = getDocRef('quotes', code.toUpperCase());
       const quoteSnap = await getDoc(quoteRef);
-
       if (!quoteSnap.exists()) {
         alert("Código da cotação inválido!");
         setLoading(false);
         return;
       }
-
-      // Verifica apenas na coleção de respostas
-      const q = query(
-        getCollectionRef('responses'),
-        where('quoteId', '==', code.toUpperCase()),
-        where('supplierName', '==', name)
-      );
+      const q = query(getCollectionRef('responses'), where('quoteId', '==', code.toUpperCase()), where('supplierName', '==', name));
       const querySnapshot = await getDocs(q);
-
       if (!querySnapshot.empty) {
         const responseData = querySnapshot.docs[0].data();
         if (responseData.password && responseData.password !== password) {
@@ -389,23 +361,10 @@ const SupplierLogin = ({ setView, setSupplierAuth }) => {
           setLoading(false);
           return;
         }
-        setSupplierAuth({
-           name,
-           password,
-           quoteId: code.toUpperCase(),
-           responseId: querySnapshot.docs[0].id,
-           existingData: responseData
-        });
+        setSupplierAuth({ name, password, quoteId: code.toUpperCase(), responseId: querySnapshot.docs[0].id, existingData: responseData });
       } else {
-        setSupplierAuth({
-            name,
-            password,
-            quoteId: code.toUpperCase(),
-            responseId: null,
-            existingData: null
-         });
+        setSupplierAuth({ name, password, quoteId: code.toUpperCase(), responseId: null, existingData: null });
       }
-
       setView('supplier_view');
     } catch (e) {
       console.error(e);
@@ -426,32 +385,12 @@ const SupplierLogin = ({ setView, setSupplierAuth }) => {
           <p className="text-sm text-gray-500">Identifique-se para acessar a cotação.</p>
         </div>
         <div className="space-y-4 text-left">
-           <Input 
-            label="Nome da Empresa / Vendedor" 
-            placeholder="Ex: Atacadão do Zé" 
-            value={name} 
-            onChange={e => setName(e.target.value)} 
-          />
-           <Input 
-            label="Sua Senha (crie uma senha simples)" 
-            type="password" 
-            placeholder="Ex: 1234" 
-            value={password} 
-            onChange={e => setPassword(e.target.value)} 
-          />
+           <Input label="Nome da Empresa / Vendedor" placeholder="Ex: Atacadão do Zé" value={name} onChange={e => setName(e.target.value)} />
+           <Input label="Sua Senha (crie uma senha simples)" type="password" placeholder="Ex: 1234" value={password} onChange={e => setPassword(e.target.value)} />
            <div className="pt-2 border-t border-gray-100">
-             <Input 
-                label="Código da Cotação" 
-                placeholder="Ex: X9B2A" 
-                className="font-mono uppercase"
-                value={code} 
-                onChange={e => setCode(e.target.value)} 
-            />
+             <Input label="Código da Cotação" placeholder="Ex: X9B2A" className="font-mono uppercase" value={code} onChange={e => setCode(e.target.value)} />
            </div>
-          
-          <Button className="w-full" variant="success" onClick={handleLogin} disabled={loading}>
-            {loading ? <Loader2 className="animate-spin" /> : 'Acessar Cotação'}
-          </Button>
+          <Button className="w-full" variant="success" onClick={handleLogin} disabled={loading}>{loading ? <Loader2 className="animate-spin" /> : 'Acessar Cotação'}</Button>
           <button onClick={() => setView('home')} className="w-full text-sm text-gray-400 hover:text-gray-600 py-2">Voltar</button>
         </div>
       </Card>
@@ -459,7 +398,6 @@ const SupplierLogin = ({ setView, setSupplierAuth }) => {
   );
 };
 
-// 2. Dashboard do Dono
 const AdminDashboard = ({ userId, setView, setCurrentQuote }) => {
   const [quotes, setQuotes] = useState([]);
   const [loading, setLoading] = useState(true);
@@ -479,9 +417,7 @@ const AdminDashboard = ({ userId, setView, setCurrentQuote }) => {
     return () => unsub();
   }, []);
 
-  const handleRefresh = () => {
-    window.location.reload();
-  };
+  const handleRefresh = () => { window.location.reload(); };
 
   const handleCopy = (text) => {
     if (navigator.clipboard && window.isSecureContext) {
@@ -511,18 +447,11 @@ const AdminDashboard = ({ userId, setView, setCurrentQuote }) => {
   const handleClone = async (quote) => {
       const confirmed = window.confirm(`Clonar cotação "${quote.title}"?`);
       if(!confirmed) return;
-
       setProcessing(quote.id);
       try {
           const shortId = Math.random().toString(36).substring(2, 8).toUpperCase();
           const docRef = getDocRef('quotes', shortId);
-          await setDoc(docRef, {
-            title: `${quote.title} (Cópia)`,
-            ownerId: userId,
-            items: quote.items.map(i => ({...i, id: i.id || generateId()})), 
-            status: 'open',
-            createdAt: serverTimestamp()
-          });
+          await setDoc(docRef, { title: `${quote.title} (Cópia)`, ownerId: userId, items: quote.items.map(i => ({...i, id: i.id || generateId()})), status: 'open', createdAt: serverTimestamp() });
           alert("Cotação clonada com sucesso!");
       } catch (e) {
           alert("Erro ao clonar.");
@@ -533,10 +462,7 @@ const AdminDashboard = ({ userId, setView, setCurrentQuote }) => {
 
   const handleToggleStatus = async (quote) => {
       const newStatus = quote.status === 'open' ? 'closed' : 'open';
-      const action = newStatus === 'open' ? 'reabrir' : 'encerrar';
-      
       setProcessing(quote.id); 
-      
       try {
           const docRef = getDocRef('quotes', quote.id);
           await setDoc(docRef, { status: newStatus }, { merge: true });
@@ -550,7 +476,6 @@ const AdminDashboard = ({ userId, setView, setCurrentQuote }) => {
 
   const handleDelete = async (quote) => {
       if(!window.confirm(`Tem certeza que deseja EXCLUIR permanentemente a cotação "${quote.title}"?`)) return;
-      
       setProcessing(quote.id);
       try {
           const docRef = getDocRef('quotes', quote.id);
@@ -573,33 +498,14 @@ const AdminDashboard = ({ userId, setView, setCurrentQuote }) => {
       <header className="bg-white border-b sticky top-0 z-10">
         <div className="max-w-3xl mx-auto px-4 py-4 flex items-center justify-between">
           <div className="flex items-center gap-2">
-            <button onClick={() => setView('home')} className="p-2 -ml-2 text-gray-600 hover:bg-gray-100 rounded-full" title="Sair">
-                <LogOut size={20} />
-            </button>
+            <button onClick={() => setView('home')} className="p-2 -ml-2 text-gray-600 hover:bg-gray-100 rounded-full" title="Sair"><LogOut size={20} /></button>
             <h1 className="font-bold text-lg text-gray-900">Minhas Cotações</h1>
           </div>
-          
-          <button 
-            onClick={handleRefresh}
-            className="p-2 text-gray-500 hover:text-blue-600 rounded-full transition-colors"
-            title="Recarregar Dados"
-          >
-            <RefreshCw size={20} />
-          </button>
+          <button onClick={handleRefresh} className="p-2 text-gray-500 hover:text-blue-600 rounded-full transition-colors" title="Recarregar Dados"><RefreshCw size={20} /></button>
         </div>
         <div className="flex border-t border-gray-100">
-            <button 
-                onClick={() => setActiveTab('open')}
-                className={`flex-1 py-3 text-sm font-medium border-b-2 transition-colors ${activeTab === 'open' ? 'border-blue-600 text-blue-600' : 'border-transparent text-gray-500 hover:text-gray-700'}`}
-            >
-                Abertas ({quotes.filter(q => q.status === 'open').length})
-            </button>
-            <button 
-                onClick={() => setActiveTab('closed')}
-                className={`flex-1 py-3 text-sm font-medium border-b-2 transition-colors ${activeTab === 'closed' ? 'border-blue-600 text-blue-600' : 'border-transparent text-gray-500 hover:text-gray-700'}`}
-            >
-                Encerradas ({quotes.filter(q => q.status === 'closed').length})
-            </button>
+            <button onClick={() => setActiveTab('open')} className={`flex-1 py-3 text-sm font-medium border-b-2 transition-colors ${activeTab === 'open' ? 'border-blue-600 text-blue-600' : 'border-transparent text-gray-500 hover:text-gray-700'}`}>Abertas ({quotes.filter(q => q.status === 'open').length})</button>
+            <button onClick={() => setActiveTab('closed')} className={`flex-1 py-3 text-sm font-medium border-b-2 transition-colors ${activeTab === 'closed' ? 'border-blue-600 text-blue-600' : 'border-transparent text-gray-500 hover:text-gray-700'}`}>Encerradas ({quotes.filter(q => q.status === 'closed').length})</button>
         </div>
       </header>
 
@@ -616,57 +522,23 @@ const AdminDashboard = ({ userId, setView, setCurrentQuote }) => {
             <Card key={quote.id} className={`p-4 hover:shadow-md transition-shadow cursor-pointer relative ${quote.status === 'closed' ? 'opacity-90 bg-gray-50' : ''}`} >
                <div className="absolute top-4 right-4 flex gap-2 z-20">
                   {quote.status === 'open' && (
-                    <button 
-                        onClick={(e) => { e.stopPropagation(); setCurrentQuote(quote); setView('edit_quote'); }}
-                        className="p-2 text-gray-400 hover:text-blue-600 hover:bg-blue-50 rounded-full transition-colors bg-white border border-gray-100 shadow-sm"
-                        title="Editar Cotação"
-                    >
-                        <Pencil size={18} />
-                    </button>
+                    <button onClick={(e) => { e.stopPropagation(); setCurrentQuote(quote); setView('edit_quote'); }} className="p-2 text-gray-400 hover:text-blue-600 hover:bg-blue-50 rounded-full transition-colors bg-white border border-gray-100 shadow-sm" title="Editar Cotação"><Pencil size={18} /></button>
                   )}
-                  <button 
-                    onClick={(e) => { e.stopPropagation(); handleClone(quote); }}
-                    disabled={processing === quote.id}
-                    className="p-2 text-gray-400 hover:text-blue-600 hover:bg-blue-50 rounded-full transition-colors bg-white border border-gray-100 shadow-sm"
-                    title="Clonar Cotação"
-                  >
-                    {processing === quote.id && quote.status !== 'closed' ? <Loader2 size={18} className="animate-spin"/> : <Copy size={18} />}
-                  </button>
-                  <button 
-                    onClick={(e) => { e.stopPropagation(); handleToggleStatus(quote); }}
-                    disabled={processing === quote.id}
-                    className={`p-2 rounded-full transition-colors shadow-sm ${quote.status === 'open' ? 'text-gray-400 hover:text-red-600 hover:bg-red-50 bg-white border border-gray-100' : 'text-green-600 bg-green-50 hover:bg-green-100 border border-green-100'}`}
-                    title={quote.status === 'open' ? "Encerrar Cotação" : "Reabrir Cotação"}
-                  >
-                    {processing === quote.id ? <Loader2 size={18} className="animate-spin"/> : (quote.status === 'open' ? <Lock size={18} /> : <Unlock size={18} />)}
-                  </button>
-                  {/* Botão de Excluir */}
+                  <button onClick={(e) => { e.stopPropagation(); handleClone(quote); }} disabled={processing === quote.id} className="p-2 text-gray-400 hover:text-blue-600 hover:bg-blue-50 rounded-full transition-colors bg-white border border-gray-100 shadow-sm" title="Clonar Cotação">{processing === quote.id && quote.status !== 'closed' ? <Loader2 size={18} className="animate-spin"/> : <Copy size={18} />}</button>
+                  <button onClick={(e) => { e.stopPropagation(); handleToggleStatus(quote); }} disabled={processing === quote.id} className={`p-2 rounded-full transition-colors shadow-sm ${quote.status === 'open' ? 'text-gray-400 hover:text-red-600 hover:bg-red-50 bg-white border border-gray-100' : 'text-green-600 bg-green-50 hover:bg-green-100 border border-green-100'}`} title={quote.status === 'open' ? "Encerrar Cotação" : "Reabrir Cotação"}>{processing === quote.id ? <Loader2 size={18} className="animate-spin"/> : (quote.status === 'open' ? <Lock size={18} /> : <Unlock size={18} />)}</button>
                   {quote.status === 'closed' && (
-                    <button 
-                        onClick={(e) => { e.stopPropagation(); handleDelete(quote); }}
-                        disabled={processing === quote.id}
-                        className="p-2 text-red-400 hover:text-red-600 hover:bg-red-50 rounded-full transition-colors bg-white border border-red-100 shadow-sm"
-                        title="Excluir Cotação"
-                    >
-                        {processing === quote.id ? <Loader2 size={18} className="animate-spin"/> : <Trash2 size={18} />}
-                    </button>
+                    <button onClick={(e) => { e.stopPropagation(); handleDelete(quote); }} disabled={processing === quote.id} className="p-2 text-red-400 hover:text-red-600 hover:bg-red-50 rounded-full transition-colors bg-white border border-red-100 shadow-sm" title="Excluir Cotação">{processing === quote.id ? <Loader2 size={18} className="animate-spin"/> : <Trash2 size={18} />}</button>
                   )}
                </div>
-
               <div onClick={() => { setCurrentQuote(quote); setView('admin_results'); }}>
                 <div className="flex justify-between items-start mb-2 pr-32"> 
                   <h3 className={`font-bold text-lg ${quote.status === 'closed' ? 'text-gray-500' : 'text-gray-800'}`}>{quote.title}</h3>
                 </div>
                 <div className="flex items-center gap-2 mb-4">
-                    <span className={`px-2 py-1 rounded-full text-xs font-medium ${quote.status === 'open' ? 'bg-green-100 text-green-700' : 'bg-red-100 text-red-700'}`}>
-                        {quote.status === 'open' ? 'Aberta' : 'Fechada'}
-                    </span>
-                    <span className="text-sm text-gray-500">
-                    • {new Date(quote.createdAt?.seconds * 1000).toLocaleDateString()} • {quote.items?.length || 0} itens
-                    </span>
+                    <span className={`px-2 py-1 rounded-full text-xs font-medium ${quote.status === 'open' ? 'bg-green-100 text-green-700' : 'bg-red-100 text-red-700'}`}>{quote.status === 'open' ? 'Aberta' : 'Fechada'}</span>
+                    <span className="text-sm text-gray-500">• {new Date(quote.createdAt?.seconds * 1000).toLocaleDateString()} • {quote.items?.length || 0} itens</span>
                 </div>
               </div>
-              
               <div className="flex flex-col gap-2 pt-2 border-t border-gray-100">
                 {quote.status === 'open' && (
                     <div className="flex items-center bg-gray-50 p-2 rounded border border-gray-200">
@@ -676,58 +548,28 @@ const AdminDashboard = ({ userId, setView, setCurrentQuote }) => {
                 )}
                 <div className="flex gap-2">
                     {quote.status === 'open' ? (
-                        <button 
-                        onClick={(e) => {
-                            e.stopPropagation();
-                            const text = `Olá! Cotação *${quote.title}*.\nAcesse o app: https://cotacao-tagavas.vercel.app/\nUse o código: *${quote.id}*`;
-                            handleCopy(text);
-                        }}
-                        className="flex-1 flex items-center justify-center gap-2 py-2 text-blue-600 text-sm font-medium hover:bg-blue-50 rounded-lg transition-colors"
-                        >
-                        <Share2 size={16} />
-                        Copiar Convite
-                        </button>
+                        <button onClick={(e) => { e.stopPropagation(); const text = `Olá! Cotação *${quote.title}*.\nAcesse o app: https://cotacao-tagavas.vercel.app/\nUse o código: *${quote.id}*`; handleCopy(text); }} className="flex-1 flex items-center justify-center gap-2 py-2 text-blue-600 text-sm font-medium hover:bg-blue-50 rounded-lg transition-colors"><Share2 size={16} /> Copiar Convite</button>
                     ) : (
-                        <div className="flex-1 flex items-center justify-center gap-2 py-2 text-gray-400 text-sm font-medium bg-gray-50 rounded-lg cursor-not-allowed">
-                            <Lock size={16} /> Fechada
-                        </div>
+                        <div className="flex-1 flex items-center justify-center gap-2 py-2 text-gray-400 text-sm font-medium bg-gray-50 rounded-lg cursor-not-allowed"><Lock size={16} /> Fechada</div>
                     )}
-                    <button 
-                      onClick={(e) => {
-                        e.stopPropagation();
-                        setCurrentQuote(quote);
-                        setView('admin_results');
-                      }}
-                      className="flex-1 flex items-center justify-center gap-2 py-2 text-gray-600 text-sm font-medium hover:bg-gray-100 rounded-lg transition-colors"
-                    >
-                      Ver Resultados
-                    </button>
+                    <button onClick={(e) => { e.stopPropagation(); setCurrentQuote(quote); setView('admin_results'); }} className="flex-1 flex items-center justify-center gap-2 py-2 text-gray-600 text-sm font-medium hover:bg-gray-100 rounded-lg transition-colors">Ver Resultados</button>
                 </div>
               </div>
             </Card>
           ))
         )}
       </main>
-
       <div className="fixed bottom-6 right-6 md:right-1/2 md:translate-x-48 z-50">
-        <Button 
-          className="rounded-full shadow-lg px-6 py-4" 
-          onClick={() => setView('create_quote')}
-          icon={Plus}
-        >
-          Nova Cotação
-        </Button>
+        <Button className="rounded-full shadow-lg px-6 py-4" onClick={() => setView('create_quote')} icon={Plus}>Nova Cotação</Button>
       </div>
     </div>
   );
 };
 
-// 3. Criar/Editar Cotação
 const CreateQuote = ({ userId, setView, editingQuote }) => {
   const [title, setTitle] = useState(editingQuote ? editingQuote.title || '' : '');
   const [items, setItems] = useState(() => {
      if (editingQuote) {
-        // Garante que items seja sempre um array para evitar crash no map
         const safeItems = Array.isArray(editingQuote.items) ? editingQuote.items : [];
         return safeItems.map(i => ({
             ...i, 
@@ -739,32 +581,18 @@ const CreateQuote = ({ userId, setView, editingQuote }) => {
      }
      return [{ id: generateId(), name: '', quantity: '1', unit: 'un' }];
   });
-
   const [isSubmitting, setIsSubmitting] = useState(false);
-  
   const [barcode, setBarcode] = useState("");
   const [isScanning, setIsScanning] = useState(false);
   const [showCamera, setShowCamera] = useState(false); 
 
-  const addItem = () => {
-    setItems([...items, { id: generateId(), name: '', quantity: '', unit: 'un' }]);
-  };
+  const addItem = () => { setItems([...items, { id: generateId(), name: '', quantity: '', unit: 'un' }]); };
+  const updateItem = (id, field, value) => { setItems(items.map(item => item.id === id ? { ...item, [field]: value } : item)); };
+  const removeItem = (id) => { if(items.length > 1) { setItems(items.filter(item => item.id !== id)); } };
 
-  const updateItem = (id, field, value) => {
-    setItems(items.map(item => item.id === id ? { ...item, [field]: value } : item));
-  };
-
-  const removeItem = (id) => {
-    if(items.length > 1) {
-      setItems(items.filter(item => item.id !== id));
-    }
-  };
-
-  // Função para Importar Excel
   const handleImportExcel = (e) => {
     const file = e.target.files[0];
     if (!file) return;
-
     import('xlsx').then(XLSX => processExcel(file, XLSX)).catch(err => {
          console.error("XLSX not found", err);
          alert("Erro ao carregar módulo XLSX. Verifique o package.json");
@@ -779,57 +607,28 @@ const CreateQuote = ({ userId, setView, editingQuote }) => {
         const wsname = workbook.SheetNames[0];
         const ws = workbook.Sheets[wsname];
         const rows = XLSXLib.utils.sheet_to_json(ws, { header: 1 });
-
         const newItems = [];
-        
         rows.forEach((row, index) => {
             if (index === 0 && row[0] && String(row[0]).toLowerCase().includes('quant')) return;
-            
             const qty = row[0] ? String(row[0]) : '1';
             const name = row[1] ? String(row[1]) : '';
-
-            if (name) {
-                newItems.push({
-                    id: generateId(),
-                    quantity: qty,
-                    name: name,
-                    unit: 'un' 
-                });
-            }
+            if (name) { newItems.push({ id: generateId(), quantity: qty, name: name, unit: 'un' }); }
         });
-
         if (newItems.length > 0) {
-            setItems(prev => {
-                if(prev.length === 1 && !prev[0].name) return newItems;
-                return [...prev, ...newItems];
-            });
+            setItems(prev => { if(prev.length === 1 && !prev[0].name) return newItems; return [...prev, ...newItems]; });
             alert(`${newItems.length} itens importados!`);
-        } else {
-            alert("Nenhum item válido encontrado na planilha.");
-        }
+        } else { alert("Nenhum item válido encontrado na planilha."); }
     };
     reader.readAsArrayBuffer(file);
   };
 
   const fetchProductMetadata = async (code) => {
     if(COSMOS_API_TOKEN) {
-      try {
-        const response = await fetch(`https://api.cosmos.bluesoft.com.br/gtins/${code}`, {
-          headers: { "X-Cosmos-Token": COSMOS_API_TOKEN }
-        });
-        if(response.ok) {
-          const data = await response.json();
-          return data.description || data.product_description; 
-        }
+      try { const response = await fetch(`https://api.cosmos.bluesoft.com.br/gtins/${code}`, { headers: { "X-Cosmos-Token": COSMOS_API_TOKEN } });
+        if(response.ok) { const data = await response.json(); return data.description || data.product_description; }
       } catch(e) { console.log("Cosmos failed", e); }
     }
-
-    try {
-      const response = await fetch(`https://world.openfoodfacts.org/api/v0/product/${code}.json`);
-      const data = await response.json();
-      if(data.status === 1) return data.product.product_name;
-    } catch(e) { console.log("OpenFood failed", e); }
-
+    try { const response = await fetch(`https://world.openfoodfacts.org/api/v0/product/${code}.json`); const data = await response.json(); if(data.status === 1) return data.product.product_name; } catch(e) { console.log("OpenFood failed", e); }
     return null;
   };
 
@@ -837,196 +636,94 @@ const CreateQuote = ({ userId, setView, editingQuote }) => {
     const isCameraScan = !!manualCode;
     let codeToSearch = manualCode || barcode.trim();
     if(!codeToSearch) return;
-
     try { new Audio('https://codeskulptor-demos.commondatastorage.googleapis.com/pang/pop.mp3').play(); } catch(e){}
-
     setIsScanning(true);
-    
     let productName = await fetchProductMetadata(codeToSearch);
-
     if (!productName) {
         let alternativeCode = codeToSearch.startsWith('0') ? codeToSearch.substring(1) : '0' + codeToSearch;
         productName = await fetchProductMetadata(alternativeCode);
         if (productName) codeToSearch = alternativeCode; 
     }
-    
     if(productName) {
-        setItems(prev => [...prev, { 
-            id: generateId(), 
-            name: productName, 
-            quantity: '1', 
-            unit: 'un',
-            barcode: codeToSearch 
-        }]);
+        setItems(prev => [...prev, { id: generateId(), name: productName, quantity: '1', unit: 'un', barcode: codeToSearch }]);
         setBarcode('');
         if(isCameraScan) setShowCamera(false);
     } else {
         if(isCameraScan) setShowCamera(false);
-        setTimeout(() => {
-            alert(`Produto não encontrado (Código: ${codeToSearch}).\nPor favor, insira o nome manualmente.`);
-        }, 100);
+        setTimeout(() => { alert(`Produto não encontrado (Código: ${codeToSearch}).\nPor favor, insira o nome manualmente.`); }, 100);
     }
-    
     setIsScanning(false);
   };
 
-  const handleKeyDown = (e) => {
-    if(e.key === 'Enter') handleBarcodeLookup();
-  }
+  const handleKeyDown = (e) => { if(e.key === 'Enter') handleBarcodeLookup(); }
 
   const handleSubmit = async () => {
     if (!title.trim()) return alert("Dê um nome para a cotação");
     if (items.some(i => !i.name.trim())) return alert("Preencha o nome de todos os itens");
     setIsSubmitting(true);
     try {
-      const docRef = editingQuote 
-        ? getDocRef('quotes', editingQuote.id)
-        : getDocRef('quotes', Math.random().toString(36).substring(2, 8).toUpperCase());
-      
-      const dataToSave = {
-          title,
-          ownerId: userId,
-          items: items.map(i => ({ id: i.id, name: i.name, quantity: i.quantity, unit: i.unit })),
-      };
-
-      if(!editingQuote) {
-          dataToSave.status = 'open';
-          dataToSave.createdAt = serverTimestamp();
-      }
-
+      const docRef = editingQuote ? getDocRef('quotes', editingQuote.id) : getDocRef('quotes', Math.random().toString(36).substring(2, 8).toUpperCase());
+      const dataToSave = { title, ownerId: userId, items: items.map(i => ({ id: i.id, name: i.name, quantity: i.quantity, unit: i.unit })), };
+      if(!editingQuote) { dataToSave.status = 'open'; dataToSave.createdAt = serverTimestamp(); }
       await setDoc(docRef, dataToSave, { merge: true });
-      
       setView('admin_dashboard');
-    } catch (error) {
-      console.error(error);
-      alert("Erro ao salvar. Tente novamente.");
-    } finally {
-      setIsSubmitting(false);
-    }
+    } catch (error) { console.error(error); alert("Erro ao salvar. Tente novamente."); } finally { setIsSubmitting(false); }
   };
 
   return (
     <div className="min-h-screen bg-gray-50 pb-20">
        <header className="bg-white border-b sticky top-0 z-10">
         <div className="max-w-3xl mx-auto px-4 py-4 flex items-center gap-3">
-          <button onClick={() => setView('admin_dashboard')} className="p-2 -ml-2 text-gray-600 hover:bg-gray-100 rounded-full">
-            <ArrowLeft size={20} />
-          </button>
+          <button onClick={() => setView('admin_dashboard')} className="p-2 -ml-2 text-gray-600 hover:bg-gray-100 rounded-full"><ArrowLeft size={20} /></button>
           <h1 className="font-bold text-lg text-gray-900">{editingQuote ? 'Editar Cotação' : 'Nova Lista de Compras'}</h1>
         </div>
       </header>
-
       <main className="max-w-3xl mx-auto p-4 space-y-6">
         <Card className="p-4 space-y-4">
-          <Input 
-            label="Nome da Cotação (Ex: Semanal Hortifruti)" 
-            value={title} 
-            onChange={e => setTitle(e.target.value)} 
-            placeholder="Digite um nome..."
-          />
-          
+          <Input label="Nome da Cotação (Ex: Semanal Hortifruti)" value={title} onChange={e => setTitle(e.target.value)} placeholder="Digite um nome..." />
           <div className="bg-blue-50 border border-blue-100 rounded-xl p-4">
              <div className="flex items-center justify-between mb-2">
                  <div className="flex items-center gap-2 text-blue-800 font-bold text-sm">
-                    <ScanBarcode size={18} />
-                    <span>Adicionar por Código</span>
+                    <ScanBarcode size={18} /><span>Adicionar por Código</span>
                  </div>
                  <div className="relative">
-                    <input 
-                        type="file" 
-                        accept=".xlsx, .xls" 
-                        onChange={handleImportExcel}
-                        className="hidden"
-                        id="excel-upload"
-                    />
-                    <label htmlFor="excel-upload" className="flex items-center gap-1 text-xs text-green-700 bg-green-100 px-2 py-1 rounded cursor-pointer hover:bg-green-200 transition-colors">
-                        <FileSpreadsheet size={14} /> Importar Excel
-                    </label>
+                    <input type="file" accept=".xlsx, .xls" onChange={handleImportExcel} className="hidden" id="excel-upload" />
+                    <label htmlFor="excel-upload" className="flex items-center gap-1 text-xs text-green-700 bg-green-100 px-2 py-1 rounded cursor-pointer hover:bg-green-200 transition-colors"><FileSpreadsheet size={14} /> Importar Excel</label>
                  </div>
              </div>
              <div className="flex gap-2 flex-wrap sm:flex-nowrap">
-                <input 
-                    className="flex-1 min-w-[150px] px-3 py-2 rounded-lg border border-blue-200 focus:outline-none focus:ring-2 focus:ring-blue-300"
-                    placeholder="Bipe ou digite o código"
-                    value={barcode}
-                    onChange={e => setBarcode(e.target.value)}
-                    onKeyDown={handleKeyDown}
-                    autoFocus={!editingQuote} 
-                />
-                <Button 
-                    className="px-3" 
-                    onClick={() => handleBarcodeLookup()} 
-                    disabled={isScanning}
-                >
-                    <Plus size={18}/>
-                </Button>
-                <Button 
-                    variant="secondary"
-                    className="px-3 border-blue-200 text-blue-600" 
-                    onClick={() => setShowCamera(true)}
-                >
-                    <Camera size={18}/>
-                </Button>
+                <input className="flex-1 min-w-[150px] px-3 py-2 rounded-lg border border-blue-200 focus:outline-none focus:ring-2 focus:ring-blue-300" placeholder="Bipe ou digite o código" value={barcode} onChange={e => setBarcode(e.target.value)} onKeyDown={handleKeyDown} autoFocus={!editingQuote} />
+                <Button className="px-3" onClick={() => handleBarcodeLookup()} disabled={isScanning}><Plus size={18}/></Button>
+                <Button variant="secondary" className="px-3 border-blue-200 text-blue-600" onClick={() => setShowCamera(true)}><Camera size={18}/></Button>
              </div>
           </div>
         </Card>
-
-        {showCamera && (
-          <BarcodeScanner 
-            onDetected={(code) => handleBarcodeLookup(code)}
-            onClose={() => setShowCamera(false)}
-          />
-        )}
-
+        {showCamera && (<BarcodeScanner onDetected={(code) => handleBarcodeLookup(code)} onClose={() => setShowCamera(false)} />)}
         <div className="space-y-3">
           <h2 className="text-sm font-bold text-gray-500 uppercase tracking-wider px-1">Itens da Lista</h2>
           {items.map((item, index) => (
             <Card key={item.id} className="p-3 flex gap-2 items-start">
               <div className="w-16 flex-shrink-0">
-                 <input 
-                  type="text"
-                  inputMode="numeric"
-                  className="w-full px-2 py-3 rounded-lg border border-gray-200 text-center"
-                  placeholder="Qtd"
-                  value={item.quantity}
-                  onChange={(e) => updateItem(item.id, 'quantity', e.target.value)}
-                 />
+                 <input type="text" inputMode="numeric" className="w-full px-2 py-3 rounded-lg border border-gray-200 text-center" placeholder="Qtd" value={item.quantity} onChange={(e) => updateItem(item.id, 'quantity', e.target.value)} />
               </div>
               <div className="flex-1">
-                <input 
-                  type="text"
-                  className="w-full px-3 py-3 rounded-lg border border-gray-200"
-                  placeholder="Nome do Produto"
-                  value={item.name}
-                  onChange={(e) => updateItem(item.id, 'name', e.target.value)}
-                 />
+                <input type="text" className="w-full px-3 py-3 rounded-lg border border-gray-200" placeholder="Nome do Produto" value={item.name} onChange={(e) => updateItem(item.id, 'name', e.target.value)} />
               </div>
-              <button 
-                onClick={() => removeItem(item.id)}
-                className="p-3 text-red-400 hover:text-red-600 hover:bg-red-50 rounded-lg transition-colors"
-              >
-                <Trash2 size={20} />
-              </button>
+              <button onClick={() => removeItem(item.id)} className="p-3 text-red-400 hover:text-red-600 hover:bg-red-50 rounded-lg transition-colors"><Trash2 size={20} /></button>
             </Card>
           ))}
-          <Button variant="secondary" onClick={addItem} className="w-full border-dashed" icon={Plus}>
-            Adicionar Item Manualmente
-          </Button>
+          <Button variant="secondary" onClick={addItem} className="w-full border-dashed" icon={Plus}>Adicionar Item Manualmente</Button>
         </div>
       </main>
-
       <div className="fixed bottom-0 left-0 right-0 bg-white border-t p-4 z-50">
         <div className="max-w-3xl mx-auto">
-          <Button className="w-full" onClick={handleSubmit} disabled={isSubmitting}>
-            {isSubmitting ? 'Salvando...' : (editingQuote ? 'Salvar Alterações' : 'Criar Cotação')}
-          </Button>
+          <Button className="w-full" onClick={handleSubmit} disabled={isSubmitting}>{isSubmitting ? 'Salvando...' : (editingQuote ? 'Salvar Alterações' : 'Criar Cotação')}</Button>
         </div>
       </div>
     </div>
   );
 };
 
-// 4. Visão do Fornecedor
 const SupplierView = ({ supplierAuth, setView }) => {
   const [quote, setQuote] = useState(null);
   const [prices, setPrices] = useState(supplierAuth.existingData?.prices || {});
@@ -1042,109 +739,34 @@ const SupplierView = ({ supplierAuth, setView }) => {
         const docSnap = await getDoc(docRef);
         if (docSnap.exists()) {
           setQuote({ id: docSnap.id, ...docSnap.data() });
-          if(!supplierAuth.existingData) {
-            const initialPrices = {};
-            setPrices(initialPrices);
-          }
+          if(!supplierAuth.existingData) { setPrices({}); }
         } else {
           alert("Erro ao carregar cotação.");
           setView('home');
         }
-      } catch (e) {
-        console.error(e);
-      } finally {
-        setLoading(false);
-      }
+      } catch (e) { console.error(e); } finally { setLoading(false); }
     };
     fetchQuote();
   }, [supplierAuth, setView]);
 
-  const getPriceValue = (item, index) => {
-    if (prices[item.id] !== undefined) return prices[item.id];
-    if (prices[index] !== undefined) return prices[index]; 
-    return '';
-  };
-
-  const getNoteValue = (item, index) => {
-    if (notes[item.id] !== undefined) return notes[item.id];
-    if (notes[index] !== undefined) return notes[index]; 
-    return '';
-  };
-
-  const handlePriceChange = (item, value) => {
-    if(status === 'final') return;
-    const cleanValue = value.replace(/[^0-9.,]/g, '');
-    if(item.id) setPrices(prev => ({ ...prev, [item.id]: cleanValue }));
-  };
-
-  const handleNoteChange = (item, value) => {
-    if(status === 'final') return;
-    if(item.id) setNotes(prev => ({ ...prev, [item.id]: value }));
-  };
+  const getPriceValue = (item, index) => { if (prices[item.id] !== undefined) return prices[item.id]; if (prices[index] !== undefined) return prices[index]; return ''; };
+  const getNoteValue = (item, index) => { if (notes[item.id] !== undefined) return notes[item.id]; if (notes[index] !== undefined) return notes[index]; return ''; };
+  const handlePriceChange = (item, value) => { if(status === 'final') return; const cleanValue = value.replace(/[^0-9.,]/g, ''); if(item.id) setPrices(prev => ({ ...prev, [item.id]: cleanValue })); };
+  const handleNoteChange = (item, value) => { if(status === 'final') return; if(item.id) setNotes(prev => ({ ...prev, [item.id]: value })); };
 
   const handleSave = async (newStatus = 'draft') => {
     setLoading(true);
     try {
-      const data = {
-        quoteId: supplierAuth.quoteId,
-        supplierName: supplierAuth.name,
-        password: supplierAuth.password,
-        prices, 
-        notes, 
-        status: newStatus,
-        submittedAt: serverTimestamp()
-      };
-
-      if (supplierAuth.responseId) {
-         await setDoc(getDocRef('responses', supplierAuth.responseId), data, { merge: true });
-      } else {
-         const docRef = await addDoc(getCollectionRef('responses'), data);
-         supplierAuth.responseId = docRef.id; 
-      }
-
+      const data = { quoteId: supplierAuth.quoteId, supplierName: supplierAuth.name, password: supplierAuth.password, prices, notes, status: newStatus, submittedAt: serverTimestamp() };
+      if (supplierAuth.responseId) { await setDoc(getDocRef('responses', supplierAuth.responseId), data, { merge: true }); } else { const docRef = await addDoc(getCollectionRef('responses'), data); supplierAuth.responseId = docRef.id; }
       setStatus(newStatus);
-      if(newStatus === 'final') {
-        alert("Cotação finalizada e enviada!");
-      } else {
-        alert("Rascunho salvo com sucesso.");
-      }
-    } catch (e) {
-      console.error(e);
-      alert("Erro ao salvar.");
-    } finally {
-      setLoading(false);
-    }
+      if(newStatus === 'final') { alert("Cotação finalizada e enviada!"); } else { alert("Rascunho salvo com sucesso."); }
+    } catch (e) { console.error(e); alert("Erro ao salvar."); } finally { setLoading(false); }
   };
 
   if (loading) return <div className="flex h-screen items-center justify-center"><Loader2 className="animate-spin text-blue-600" /></div>;
-
-  if (quote && quote.status === 'closed') return (
-    <div className="flex flex-col items-center justify-center min-h-screen p-6 text-center bg-gray-100">
-        <div className="w-20 h-20 bg-red-100 rounded-full flex items-center justify-center mb-6">
-            <Lock className="text-red-600" size={40} />
-        </div>
-        <h2 className="text-2xl font-bold text-gray-900 mb-2">Cotação Encerrada</h2>
-        <p className="text-gray-600 mb-8">O prazo para envio acabou. Entre em contato com o administrador.</p>
-        <Button variant="secondary" onClick={() => setView('home')}>Sair</Button>
-    </div>
-  );
-
-  if (status === 'final') return (
-    <div className="flex flex-col items-center justify-center min-h-screen p-6 text-center bg-green-50">
-      <div className="w-20 h-20 bg-green-100 rounded-full flex items-center justify-center mb-6">
-        <CheckCircle className="text-green-600" size={40} />
-      </div>
-      <h2 className="text-2xl font-bold text-gray-900 mb-2">Tudo Certo!</h2>
-      <p className="text-gray-600 mb-6">Sua cotação foi finalizada e enviada para o comprador.</p>
-      <p className="text-sm text-gray-500 mb-8 bg-white p-4 rounded-lg shadow-sm">
-         Deseja corrigir algo? Clique em "Reabrir" abaixo para editar.
-      </p>
-      <div className="flex gap-2">
-        <Button variant="secondary" onClick={() => setView('home')}>Sair</Button>
-        <Button variant="outline" onClick={() => handleSave('draft')} icon={Edit3}>Reabrir Edição</Button>
-      </div>
-    </div>
-  );
+  if (quote && quote.status === 'closed') return <div className="flex flex-col items-center justify-center min-h-screen p-6 text-center bg-gray-100"><div className="w-20 h-20 bg-red-100 rounded-full flex items-center justify-center mb-6"><Lock className="text-red-600" size={40} /></div><h2 className="text-2xl font-bold text-gray-900 mb-2">Cotação Encerrada</h2><p className="text-gray-600 mb-8">O prazo para envio acabou. Entre em contato com o administrador.</p><Button variant="secondary" onClick={() => setView('home')}>Sair</Button></div>;
+  if (status === 'final') return <div className="flex flex-col items-center justify-center min-h-screen p-6 text-center bg-green-50"><div className="w-20 h-20 bg-green-100 rounded-full flex items-center justify-center mb-6"><CheckCircle className="text-green-600" size={40} /></div><h2 className="text-2xl font-bold text-gray-900 mb-2">Tudo Certo!</h2><p className="text-gray-600 mb-6">Sua cotação foi finalizada e enviada para o comprador.</p><p className="text-sm text-gray-500 mb-8 bg-white p-4 rounded-lg shadow-sm">Deseja corrigir algo? Clique em "Reabrir" abaixo para editar.</p><div className="flex gap-2"><Button variant="secondary" onClick={() => setView('home')}>Sair</Button><Button variant="outline" onClick={() => handleSave('draft')} icon={Edit3}>Reabrir Edição</Button></div></div>;
 
   return (
     <div className="min-h-screen bg-gray-50 pb-24">
@@ -1152,86 +774,54 @@ const SupplierView = ({ supplierAuth, setView }) => {
         <div className="max-w-3xl mx-auto px-4 py-4">
           <div className="flex items-center justify-between mb-2">
              <div className="flex items-center gap-2">
-                <button onClick={() => setView('home')} className="text-gray-400">
-                <ArrowLeft size={20} />
-                </button>
+                <button onClick={() => setView('home')} className="text-gray-400"><ArrowLeft size={20} /></button>
                 <span className="text-xs font-bold text-blue-600 uppercase tracking-wider">Olá, {supplierAuth.name}</span>
              </div>
-             <div className="text-xs bg-yellow-100 text-yellow-800 px-2 py-1 rounded font-medium">
-                Rascunho
-             </div>
+             <div className="text-xs bg-yellow-100 text-yellow-800 px-2 py-1 rounded font-medium">Rascunho</div>
           </div>
           <h1 className="font-bold text-xl text-gray-900">{quote.title}</h1>
         </div>
       </header>
-
       <main className="max-w-3xl mx-auto p-4 space-y-6">
         <div className="space-y-3">
           {quote.items.map((item, index) => (
             <Card key={item.id || index} className="p-4">
               <div className="flex items-center justify-between gap-4 mb-2">
-                <div className="flex-1">
-                    <p className="font-bold text-gray-800">{item.name}</p>
-                    <p className="text-sm text-gray-500">Qtd: {item.quantity}</p>
-                </div>
-                <div className="w-32">
-                    <label className="text-xs text-gray-500 mb-1 block">Preço Unit. (R$)</label>
-                    <input 
-                    type="text"
-                    inputMode="decimal"
-                    className="w-full px-3 py-2 rounded-lg border border-gray-300 focus:border-blue-500 focus:ring-2 focus:ring-blue-100 outline-none text-right font-medium text-lg"
-                    placeholder="0,00"
-                    value={getPriceValue(item, index)}
-                    onChange={(e) => handlePriceChange(item, e.target.value)}
-                    />
-                </div>
+                <div className="flex-1"><p className="font-bold text-gray-800">{item.name}</p><p className="text-sm text-gray-500">Qtd: {item.quantity}</p></div>
+                <div className="w-32"><label className="text-xs text-gray-500 mb-1 block">Preço Unit. (R$)</label><input type="text" inputMode="decimal" className="w-full px-3 py-2 rounded-lg border border-gray-300 focus:border-blue-500 focus:ring-2 focus:ring-blue-100 outline-none text-right font-medium text-lg" placeholder="0,00" value={getPriceValue(item, index)} onChange={(e) => handlePriceChange(item, e.target.value)} /></div>
               </div>
               <div className="mt-2">
                 {expandedNote === index || getNoteValue(item, index) ? (
                   <div className="relative animate-in fade-in slide-in-from-top-1">
-                    <input 
-                      className="w-full px-3 py-2 bg-yellow-50 border border-yellow-200 rounded text-sm text-gray-700 placeholder-yellow-400/70 focus:outline-none focus:border-yellow-400"
-                      placeholder="Ex: Leve 2 pague R$ 5,00"
-                      value={getNoteValue(item, index)}
-                      onChange={(e) => handleNoteChange(item, e.target.value)}
-                    />
+                    <input className="w-full px-3 py-2 bg-yellow-50 border border-yellow-200 rounded text-sm text-gray-700 placeholder-yellow-400/70 focus:outline-none focus:border-yellow-400" placeholder="Ex: Leve 2 pague R$ 5,00" value={getNoteValue(item, index)} onChange={(e) => handleNoteChange(item, e.target.value)} />
                     <span className="absolute right-2 top-2 text-yellow-400"><MessageSquare size={14}/></span>
                   </div>
                 ) : (
-                  <button 
-                    onClick={() => setExpandedNote(index)}
-                    className="text-xs text-blue-500 hover:text-blue-700 flex items-center gap-1 font-medium"
-                  >
-                    + Adicionar observação/desconto
-                  </button>
+                  <button onClick={() => setExpandedNote(index)} className="text-xs text-blue-500 hover:text-blue-700 flex items-center gap-1 font-medium">+ Adicionar observação/desconto</button>
                 )}
               </div>
             </Card>
           ))}
         </div>
       </main>
-
       <div className="fixed bottom-0 left-0 right-0 bg-white border-t p-4 shadow-lg z-20">
         <div className="max-w-3xl mx-auto flex gap-3">
-          <Button className="flex-1" variant="secondary" onClick={() => handleSave('draft')} icon={Save}>
-            Salvar
-          </Button>
-          <Button className="flex-[2]" variant="success" onClick={() => handleSave('final')} icon={Send}>
-            Finalizar e Enviar
-          </Button>
+          <Button className="flex-1" variant="secondary" onClick={() => handleSave('draft')} icon={Save}>Salvar</Button>
+          <Button className="flex-[2]" variant="success" onClick={() => handleSave('final')} icon={Send}>Finalizar e Enviar</Button>
         </div>
       </div>
     </div>
   );
 };
 
-// 5. Resultados (BLINDAGEM TOTAL + EMPATE)
+// 5. Resultados (BLINDAGEM TOTAL + EMPATE + FIXES)
 const ResultsView = ({ quote, setView }) => {
   const [responses, setResponses] = useState([]);
   const [loading, setLoading] = useState(true);
   const [visibleSuppliers, setVisibleSuppliers] = useState([]); 
   const [showFilters, setShowFilters] = useState(false);
   const [showCredentials, setShowCredentials] = useState(false);
+  const [showAllItems, setShowAllItems] = useState(false); // Toggle Filter State
 
   useEffect(() => {
     if(!quote) return;
@@ -1362,8 +952,10 @@ const ResultsView = ({ quote, setView }) => {
         if(row.winners.includes(supplierName)) {
             hasItems = true;
             const price = isFinite(row.minPrice) ? row.minPrice.toFixed(2) : "0.00";
+            // CORREÇÃO: Adicionado (EMPATE) de volta conforme solicitado
+            const tieLabel = row.isTie ? " (EMPATE)" : "";
             // CORREÇÃO: Quantidade - Item - Preço
-            msg += `${row.item.quantity} - ${row.item.name} - (R$ ${price})\n`;
+            msg += `${row.item.quantity} - ${row.item.name} - (R$ ${price})${tieLabel}\n`;
         }
     });
 
@@ -1459,23 +1051,38 @@ const ResultsView = ({ quote, setView }) => {
 
            {/* Filtros */}
            {showFilters && (
-               <div className="flex gap-2 flex-wrap bg-gray-50 p-3 rounded-lg border border-gray-200 animate-in slide-in-from-top-2">
-                   <span className="text-xs font-bold text-gray-500 w-full">Mostrar Colunas:</span>
-                   {responses.map(r => (
-                       <button 
-                        key={r.id}
-                        onClick={() => toggleSupplierVisibility(r.supplierName)}
-                        className={`px-3 py-1 text-xs rounded-full border ${visibleSuppliers.includes(r.supplierName) ? 'bg-blue-100 border-blue-200 text-blue-700' : 'bg-white border-gray-200 text-gray-500'}`}
-                       >
-                           {r.supplierName} {r.status === 'final' && '✅'}
-                       </button>
-                   ))}
+               <div className="flex flex-col gap-3 bg-gray-50 p-3 rounded-lg border border-gray-200 animate-in slide-in-from-top-2">
+                   <div className="flex items-center justify-between border-b border-gray-200 pb-2">
+                        <span className="text-xs font-bold text-gray-500">Exibição:</span>
+                        {/* NOVO: Toggle de Filtro */}
+                        <button 
+                            onClick={() => setShowAllItems(!showAllItems)}
+                            className={`flex items-center gap-2 px-3 py-1.5 rounded-full text-xs font-medium transition-colors ${showAllItems ? 'bg-blue-600 text-white' : 'bg-gray-200 text-gray-600'}`}
+                        >
+                            <ListFilter size={14} />
+                            {showAllItems ? 'Mostrando Tudo' : 'Apenas Vencedores'}
+                        </button>
+                   </div>
+                   
+                   <div className="flex gap-2 flex-wrap">
+                        <span className="text-xs font-bold text-gray-500 w-full">Mostrar Colunas:</span>
+                        {responses.map(r => (
+                            <button 
+                                key={r.id}
+                                onClick={() => toggleSupplierVisibility(r.supplierName)}
+                                className={`px-3 py-1 text-xs rounded-full border ${visibleSuppliers.includes(r.supplierName) ? 'bg-blue-100 border-blue-200 text-blue-700' : 'bg-white border-gray-200 text-gray-500'}`}
+                            >
+                                {r.supplierName} {r.status === 'final' && '✅'}
+                            </button>
+                        ))}
+                   </div>
                </div>
            )}
         </div>
       </header>
 
-      <main className="flex-1 overflow-auto p-4 space-y-6">
+      {/* Alterado para permitir scroll da tabela separadamente e fixar cabeçalho */}
+      <main className="flex-1 overflow-hidden p-4 space-y-6 flex flex-col">
         {loading ? (
           <div className="flex justify-center py-10"><Loader2 className="animate-spin" /></div>
         ) : responses.length === 0 ? (
@@ -1485,9 +1092,9 @@ const ResultsView = ({ quote, setView }) => {
             <p>Envie o código <strong>{quote.id}</strong> para seus fornecedores.</p>
           </div>
         ) : (
-          <div className="space-y-8">
+          <div className="space-y-8 flex flex-col h-full">
              {/* Cards de Totais */}
-            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
+            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4 flex-shrink-0">
               {Object.entries(basketTotals.totals)
                 .filter(([name]) => visibleSuppliers.includes(name))
                 .map(([supplier, total]) => {
@@ -1521,15 +1128,17 @@ const ResultsView = ({ quote, setView }) => {
               })}
             </div>
 
-            {/* Tabela de Comparação */}
-            <div className="bg-white rounded-xl shadow-sm border overflow-hidden overflow-x-auto">
-              <table className="w-full text-sm text-left">
-                <thead className="bg-gray-50 text-gray-700 font-bold border-b">
+            {/* Tabela de Comparação com Header Fixo */}
+            {/* Adicionado max-h-full e flex-1 para ocupar espaço restante e permitir scroll interno */}
+            <div className="bg-white rounded-xl shadow-sm border overflow-auto flex-1 relative">
+              <table className="w-full text-sm text-left border-collapse">
+                <thead className="bg-gray-50 text-gray-700 font-bold border-b z-20">
                   <tr>
-                    <th className="p-4 min-w-[200px] sticky left-0 bg-gray-50 border-r z-10">Produto</th>
-                    <th className="p-4 min-w-[150px] text-center bg-gray-100 border-r border-gray-200">Vencedor</th>
+                    {/* Header fixo (Sticky) */}
+                    <th className="p-4 min-w-[200px] sticky left-0 top-0 z-30 bg-gray-50 border-r border-b shadow-sm">Produto</th>
+                    <th className="p-4 min-w-[150px] text-center sticky top-0 z-20 bg-gray-100 border-r border-b border-gray-200 shadow-sm">Vencedor</th>
                     {responses.filter(r => visibleSuppliers.includes(r.supplierName)).map(r => (
-                      <th key={r.id} className="p-4 min-w-[120px] text-center">
+                      <th key={r.id} className="p-4 min-w-[120px] text-center sticky top-0 z-20 bg-gray-50 border-b shadow-sm">
                           {r.supplierName}
                       </th>
                     ))}
@@ -1538,7 +1147,10 @@ const ResultsView = ({ quote, setView }) => {
                 <tbody className="divide-y">
                   {comparison
                     .filter(row => {
-                        // Se não tem vencedor, esconde (pois queremos ver quem venceu o que)
+                        // NOVO: Se showAllItems for true, ignora o filtro de vencedores
+                        if (showAllItems) return true;
+
+                        // Se não tem vencedor, esconde
                         if (row.winners.length === 0) return false;
 
                         // Se tem vencedor, só mostra se algum deles estiver visível
@@ -1617,8 +1229,7 @@ const ResultsView = ({ quote, setView }) => {
   );
 };
 
-// --- App Principal ---
-
+// ... (App Principal remains unchanged)
 export default function App() {
   const [user, setUser] = useState(null);
   const [view, setView] = useState('home'); 
