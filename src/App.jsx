@@ -18,7 +18,7 @@ import {
 } from 'firebase/firestore';
 
 // ⚠️ NO SEU COMPUTADOR: Descomente a linha abaixo para a câmera funcionar!
-// import { Html5Qrcode } from 'html5-qrcode';
+import { Html5Qrcode } from 'html5-qrcode';
 
 import { 
   Plus, 
@@ -54,8 +54,8 @@ import {
   RefreshCw,
   ScanBarcode,
   Camera,
-  FileSpreadsheet,
-  AlertTriangle // Ícone para empate
+  FileText, // Mudança aqui: FileSpreadsheet para FileText
+  AlertTriangle 
 } from 'lucide-react';
 
 // --- Configuração Firebase ---
@@ -1255,7 +1255,6 @@ const ResultsView = ({ quote, setView }) => {
       let winner = null;
 
       const priceData = responses.map(r => {
-        // Robustez: garante que r.prices e r.notes existam (evita crash com dados antigos)
         const safePrices = r.prices || {};
         const safeNotes = r.notes || {};
         
@@ -1273,7 +1272,6 @@ const ResultsView = ({ quote, setView }) => {
         
         if (!raw) return { supplier: r.supplierName, price: null, raw: '-', note };
         
-        // ⚠️ Proteção Crítica: Converte para string antes de usar replace
         const rawString = String(raw).trim();
         const val = parseFloat(rawString.replace(',', '.'));
 
@@ -1329,7 +1327,7 @@ const ResultsView = ({ quote, setView }) => {
     
     let hasItems = false;
     comparison.forEach(row => {
-        if(row.winner === supplierName) {
+        if(row.winners.includes(supplierName)) {
             hasItems = true;
             // Remove colchetes e total estimado, mantendo apenas item e preço
             const price = isFinite(row.minPrice) ? row.minPrice.toFixed(2) : "0.00";
@@ -1348,15 +1346,15 @@ const ResultsView = ({ quote, setView }) => {
     let exportText = `RESULTADO COTAÇÃO TAGAVAS: ${quote.title}\n\n`;
     const winsBySupplier = {};
     comparison.forEach(row => {
-        if(row.winner) {
-            if(!winsBySupplier[row.winner]) winsBySupplier[row.winner] = [];
-            winsBySupplier[row.winner].push({
+        row.winners.forEach(winner => {
+            if(!winsBySupplier[winner]) winsBySupplier[winner] = [];
+            winsBySupplier[winner].push({
                 name: row.item.name,
                 qty: row.item.quantity,
                 unit: row.item.unit,
                 price: row.minPrice
             });
-        }
+        });
     });
     Object.keys(winsBySupplier).forEach(supplier => {
         exportText += `-----------------------------------\n`;
@@ -1457,7 +1455,7 @@ const ResultsView = ({ quote, setView }) => {
           </div>
         ) : (
           <div className="space-y-8">
-             {/* Totals */}
+             {/* Cards de Totais */}
             <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
               {Object.entries(basketTotals.totals)
                 .filter(([name]) => visibleSuppliers.includes(name))
@@ -1507,7 +1505,15 @@ const ResultsView = ({ quote, setView }) => {
                   </tr>
                 </thead>
                 <tbody className="divide-y">
-                  {comparison.map((row, i) => (
+                  {comparison
+                    .filter(row => {
+                        // Se não tem vencedor, esconde (pois queremos ver quem venceu o que)
+                        if (row.winners.length === 0) return false;
+
+                        // Se tem vencedor, só mostra se algum deles estiver visível
+                        return row.winners.some(w => visibleSuppliers.includes(w));
+                    })
+                    .map((row, i) => (
                     <tr key={i} className="hover:bg-gray-50/50">
                       {/* Coluna Produto */}
                       <td className={`p-4 sticky left-0 border-r z-10 ${row.isTie ? 'bg-yellow-50' : 'bg-white'}`}>
@@ -1522,13 +1528,19 @@ const ResultsView = ({ quote, setView }) => {
 
                       {/* Coluna Vencedor */}
                       <td className="p-4 text-center bg-gray-50/50 border-r border-gray-200">
-                         {row.winner ? (
-                             <div className="flex flex-col items-center">
-                                 <span className="font-bold text-yellow-700">{row.winner}</span>
-                                 <span className="text-xs font-bold bg-green-100 text-green-700 px-2 rounded-full">
-                                     R$ {isFinite(row.minPrice) ? row.minPrice.toFixed(2) : '-'}
+                         {row.winners.length > 0 ? (
+                             row.isTie ? (
+                                 <span className="font-bold text-yellow-700 bg-yellow-100 px-2 py-1 rounded text-xs">
+                                     EMPATE ({row.winners.length})
                                  </span>
-                             </div>
+                             ) : (
+                                 <div className="flex flex-col items-center">
+                                    <span className="font-bold text-green-700">{row.winners[0]}</span>
+                                    <span className="text-xs text-green-600">
+                                        R$ {isFinite(row.minPrice) ? row.minPrice.toFixed(2) : '-'}
+                                    </span>
+                                 </div>
+                             )
                          ) : <span className="text-gray-300">-</span>}
                       </td>
 
@@ -1536,12 +1548,12 @@ const ResultsView = ({ quote, setView }) => {
                       {row.prices
                         .filter(p => visibleSuppliers.includes(p.supplier))
                         .map((p, idx) => {
-                        const isWinner = row.winner === p.supplier;
+                        const isWinner = row.winners.includes(p.supplier);
                         
                         // Define cor da célula: Amarelo se empate, Verde se vitória única
                         let cellClass = "";
                         if (isWinner) {
-                            cellClass = row.isTie ? "bg-yellow-100/50 text-yellow-800 font-bold" : "bg-green-50 text-green-700 font-bold";
+                            cellClass = row.isTie ? "bg-yellow-100 text-yellow-800 font-bold" : "bg-green-50 text-green-700 font-bold";
                         } else {
                             cellClass = "text-gray-600";
                         }
