@@ -54,7 +54,7 @@ import {
   RefreshCw,
   ScanBarcode,
   Camera,
-  FileText, // Mudança aqui: FileSpreadsheet para FileText
+  FileText,
   AlertTriangle 
 } from 'lucide-react';
 
@@ -1285,10 +1285,19 @@ const ResultsView = ({ quote, setView }) => {
         return { supplier: r.supplierName, price: null, raw: rawString, note };
       });
 
+      // Recalcular vencedores com base no menor preço encontrado
+      let winners = [];
+      if (minPrice !== Infinity) {
+          winners = priceData
+            .filter(p => p.price === minPrice)
+            .map(p => p.supplier);
+      }
+
       return {
         item: item,
         prices: priceData,
-        winner: winner,
+        winners: winners,
+        isTie: winners.length > 1,
         minPrice: minPrice === Infinity ? null : minPrice
       };
     });
@@ -1304,9 +1313,11 @@ const ResultsView = ({ quote, setView }) => {
     });
 
     comparison.forEach(row => {
-      if(row.winner) {
-         winnersCount[row.winner] = (winnersCount[row.winner] || 0) + 1;
-      }
+      // Se houver vencedores, incrementa para todos (mesmo se empate)
+      row.winners.forEach(winnerName => {
+         winnersCount[winnerName] = (winnersCount[winnerName] || 0) + 1;
+      });
+
       row.prices.forEach(p => {
         if (p.price && row.item.quantity) {
            // ⚠️ Proteção: Garante que quantity seja tratada como número
@@ -1329,9 +1340,8 @@ const ResultsView = ({ quote, setView }) => {
     comparison.forEach(row => {
         if(row.winners.includes(supplierName)) {
             hasItems = true;
-            // Remove colchetes e total estimado, mantendo apenas item e preço
             const price = isFinite(row.minPrice) ? row.minPrice.toFixed(2) : "0.00";
-            // CORREÇÃO: Ordem: Quantidade - Item - Preço
+            // CORREÇÃO: Quantidade - Item - Preço
             msg += `${row.item.quantity} ${row.item.unit || ''} - ${row.item.name} - (R$ ${price})\n`;
         }
     });
@@ -1362,7 +1372,7 @@ const ResultsView = ({ quote, setView }) => {
         exportText += `-----------------------------------\n`;
         winsBySupplier[supplier].forEach(item => {
             const price = isFinite(item.price) ? item.price.toFixed(2) : "0.00";
-            // CORREÇÃO: Ordem: Quantidade - Item - Preço
+            // CORREÇÃO: Quantidade - Item - Preço
             exportText += `${item.qty} ${item.unit || ''} - ${item.name} - (R$ ${price})\n`;
         });
         exportText += `\n`;
@@ -1553,7 +1563,7 @@ const ResultsView = ({ quote, setView }) => {
                         // Define cor da célula: Amarelo se empate, Verde se vitória única
                         let cellClass = "";
                         if (isWinner) {
-                            cellClass = row.isTie ? "bg-yellow-100 text-yellow-800 font-bold" : "bg-green-50 text-green-700 font-bold";
+                            cellClass = row.isTie ? "bg-yellow-100/50 text-yellow-800 font-bold" : "bg-green-50 text-green-700 font-bold";
                         } else {
                             cellClass = "text-gray-600";
                         }
