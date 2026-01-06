@@ -20,7 +20,7 @@ import {
 
 // ⚠️ Se o pacote 'html5-qrcode' não estiver instalado, mantenha comentado para evitar erros de compilação.
 // O Scanner Híbrido abaixo tratará a ausência da biblioteca mostrando a tela de simulação.
-// import { Html5Qrcode } from 'html5-qrcode';
+import { Html5Qrcode } from 'html5-qrcode';
 
 import { 
   Plus, 
@@ -60,8 +60,8 @@ import {
   AlertTriangle,
   FileSpreadsheet,
   ListFilter,
-  Pin,     // <--- NOVO
-  PinOff   // <--- NOVO
+  Pin,
+  PinOff
 } from 'lucide-react';
 
 // ... (Configuration and Helpers remain the same)
@@ -1009,8 +1009,10 @@ const ResultsView = ({ quote, setView }) => {
   };
 
   return (
-    <div className="min-h-screen bg-gray-50 flex flex-col">
-       <header className="bg-white border-b sticky top-0 z-10 shadow-sm print:hidden">
+    // CORREÇÃO: Mudei de min-h-screen para h-screen e adicionei overflow-hidden.
+    // Isso força o layout a ter a altura exata da tela e rolar apenas internamente onde necessário.
+    <div className="h-screen bg-gray-50 flex flex-col overflow-hidden">
+       <header className="bg-white border-b sticky top-0 z-10 shadow-sm print:hidden flex-shrink-0">
         <div className="w-full px-4 py-4 flex flex-col gap-4">
            <div className="flex items-center justify-between">
                 <div className="flex items-center gap-3">
