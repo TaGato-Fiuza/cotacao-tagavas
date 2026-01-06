@@ -54,7 +54,8 @@ import {
   RefreshCw,
   ScanBarcode,
   Camera,
-  FileSpreadsheet
+  FileSpreadsheet,
+  AlertTriangle // Ícone para empate
 } from 'lucide-react';
 
 // --- Configuração Firebase ---
@@ -1208,7 +1209,7 @@ const SupplierView = ({ supplierAuth, setView }) => {
   );
 };
 
-// 5. Resultados (BLINDAGEM TOTAL CONTRA ERROS)
+// 5. Resultados (BLINDAGEM TOTAL + EMPATE)
 const ResultsView = ({ quote, setView }) => {
   const [responses, setResponses] = useState([]);
   const [loading, setLoading] = useState(true);
@@ -1228,39 +1229,30 @@ const ResultsView = ({ quote, setView }) => {
     return () => unsub();
   }, [quote]); 
 
-  // Novo: Atualiza filtros de forma segura quando chegam novas respostas
   useEffect(() => {
       if (responses.length > 0) {
           const currentNames = responses.map(r => r.supplierName);
           setVisibleSuppliers(prev => {
-              // Mantém os já selecionados e adiciona novos que aparecerem
               const unique = new Set([...prev, ...currentNames]);
               return Array.from(unique);
           });
       }
   }, [responses]);
 
-  // Se não houver cotação carregada, mostra loading ou volta
   if (!quote) return <div className="flex h-screen items-center justify-center"><Loader2 className="animate-spin text-blue-600" /></div>;
 
   const comparison = useMemo(() => {
-    // ⚠️ Proteção: Se quote não tem itens, retorna vazio (evita crash)
     if (!quote.items || !Array.isArray(quote.items)) return [];
     
-    // Filtra itens inválidos que podem ter sido salvos incorretamente
     const validItems = quote.items.filter(i => i && i.name);
 
     return validItems.map((item, idx) => {
-      let minPrice = Infinity;
-      let winner = null;
-
+      // 1. Coleta e normaliza os preços
       const priceData = responses.map(r => {
-        // Robustez: garante que r.prices e r.notes existam (evita crash com dados antigos)
         const safePrices = r.prices || {};
         const safeNotes = r.notes || {};
         
         let raw = undefined;
-        // Lógica Híbrida: Tenta pegar por ID (novo), depois pelo index (legado)
         if (item.id && safePrices[item.id] !== undefined) raw = safePrices[item.id];
         else if (safePrices[idx] !== undefined) raw = safePrices[idx];
         
@@ -1273,24 +1265,41 @@ const ResultsView = ({ quote, setView }) => {
         
         if (!raw) return { supplier: r.supplierName, price: null, raw: '-', note };
         
-        // ⚠️ Proteção Crítica: Converte para string antes de usar replace
         const rawString = String(raw).trim();
         const val = parseFloat(rawString.replace(',', '.'));
 
         if (!isNaN(val)) {
-          if (val < minPrice) {
-            minPrice = val;
-            winner = r.supplierName;
-          }
           return { supplier: r.supplierName, price: val, raw: rawString, note };
         }
         return { supplier: r.supplierName, price: null, raw: rawString, note };
       });
 
+      // 2. Calcula o menor preço
+      // Filtra apenas preços válidos (maiores que zero)
+      const validPrices = priceData
+        .filter(p => p.price !== null && p.price > 0)
+        .map(p => p.price);
+        
+      let minPrice = Infinity;
+      if (validPrices.length > 0) {
+          minPrice = Math.min(...validPrices);
+      }
+
+      // 3. Determina vencedores (pode haver empate)
+      let winners = [];
+      if (minPrice !== Infinity) {
+          winners = priceData
+            .filter(p => p.price === minPrice)
+            .map(p => p.supplier);
+      }
+
+      const isTie = winners.length > 1;
+
       return {
         item: item,
         prices: priceData,
-        winner: winner,
+        winners: winners, // Agora é um array
+        isTie: isTie,     // Flag de empate
         minPrice: minPrice === Infinity ? null : minPrice
       };
     });
@@ -1306,12 +1315,13 @@ const ResultsView = ({ quote, setView }) => {
     });
 
     comparison.forEach(row => {
-      if(row.winner) {
-         winnersCount[row.winner] = (winnersCount[row.winner] || 0) + 1;
-      }
+      // Se houver vencedores, incrementa para todos (mesmo se empate)
+      row.winners.forEach(winnerName => {
+         winnersCount[winnerName] = (winnersCount[winnerName] || 0) + 1;
+      });
+
       row.prices.forEach(p => {
         if (p.price && row.item.quantity) {
-           // ⚠️ Proteção: Garante que quantity seja tratada como número
            const qtyString = String(row.item.quantity).replace(',', '.');
            const qty = parseFloat(qtyString) || 0;
            totals[p.supplier] += (p.price * qty);
@@ -1329,11 +1339,13 @@ const ResultsView = ({ quote, setView }) => {
     
     let hasItems = false;
     comparison.forEach(row => {
-        if(row.winner === supplierName) {
+        // Se o fornecedor está na lista de vencedores
+        if(row.winners.includes(supplierName)) {
             hasItems = true;
-            // Remove colchetes e total estimado, mantendo apenas item e preço
             const price = isFinite(row.minPrice) ? row.minPrice.toFixed(2) : "0.00";
-            msg += `${row.item.name} - ${row.item.quantity} (R$ ${price})\n`;
+            // Adiciona aviso de empate se houver
+            const tieWarning = row.isTie ? " (EMPATE)" : "";
+            msg += `${row.item.name} - ${row.item.quantity} (R$ ${price})${tieWarning}\n`;
         }
     });
 
@@ -1345,28 +1357,35 @@ const ResultsView = ({ quote, setView }) => {
 
   const handleExport = () => {
     let exportText = `RESULTADO COTAÇÃO TAGAVAS: ${quote.title}\n\n`;
-    const winsBySupplier = {};
+    
+    // Agrupa por fornecedor vencedor
+    // Se houver empate, o item aparece na lista de TODOS os empatados
+    const itemsBySupplier = {};
+
     comparison.forEach(row => {
-        if(row.winner) {
-            if(!winsBySupplier[row.winner]) winsBySupplier[row.winner] = [];
-            winsBySupplier[row.winner].push({
+        row.winners.forEach(winner => {
+            if (!itemsBySupplier[winner]) itemsBySupplier[winner] = [];
+            itemsBySupplier[winner].push({
                 name: row.item.name,
                 qty: row.item.quantity,
-                unit: row.item.unit,
-                price: row.minPrice
+                price: row.minPrice,
+                isTie: row.isTie
             });
-        }
+        });
     });
-    Object.keys(winsBySupplier).forEach(supplier => {
+
+    Object.keys(itemsBySupplier).forEach(supplier => {
         exportText += `-----------------------------------\n`;
         exportText += `PEDIDO PARA: ${supplier.toUpperCase()}\n`;
         exportText += `-----------------------------------\n`;
-        winsBySupplier[supplier].forEach(item => {
+        itemsBySupplier[supplier].forEach(item => {
             const price = isFinite(item.price) ? item.price.toFixed(2) : "0.00";
-            exportText += `${item.name} - ${item.qty} (R$ ${price})\n`;
+            const tieWarning = item.isTie ? " [EMPATE]" : "";
+            exportText += `${item.name} - ${item.qty} (R$ ${price})${tieWarning}\n`;
         });
         exportText += `\n`;
     });
+
     const element = document.createElement("a");
     const file = new Blob([exportText], {type: 'text/plain'});
     element.href = URL.createObjectURL(file);
@@ -1397,7 +1416,6 @@ const ResultsView = ({ quote, setView }) => {
                     </div>
                 </div>
                 <div className="flex gap-2">
-                    {/* Botão de Senhas */}
                     <Button variant="ghost" className="text-sm px-3" onClick={() => setShowCredentials(!showCredentials)} title="Ver Senhas dos Fornecedores">
                         {showCredentials ? <EyeOff size={18} /> : <Eye size={18} />}
                     </Button>
@@ -1410,12 +1428,9 @@ const ResultsView = ({ quote, setView }) => {
                 </div>
            </div>
            
-           {/* Área de Credenciais (Admin Only) */}
+           {/* Área de Senhas */}
            {showCredentials && (
              <div className="bg-yellow-50 border border-yellow-200 rounded-lg p-3 animate-in slide-in-from-top-2">
-               <h3 className="text-xs font-bold text-yellow-800 uppercase mb-2 flex items-center gap-2">
-                 <Key size={14}/> Senhas dos Fornecedores (Uso Interno)
-               </h3>
                <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-2">
                  {responses.map(r => (
                    <div key={r.id} className="text-sm bg-white p-2 rounded border border-yellow-100 flex justify-between">
@@ -1430,14 +1445,13 @@ const ResultsView = ({ quote, setView }) => {
            {/* Filtros */}
            {showFilters && (
                <div className="flex gap-2 flex-wrap bg-gray-50 p-3 rounded-lg border border-gray-200 animate-in slide-in-from-top-2">
-                   <span className="text-xs font-bold text-gray-500 w-full">Mostrar Colunas:</span>
                    {responses.map(r => (
                        <button 
                         key={r.id}
                         onClick={() => toggleSupplierVisibility(r.supplierName)}
                         className={`px-3 py-1 text-xs rounded-full border ${visibleSuppliers.includes(r.supplierName) ? 'bg-blue-100 border-blue-200 text-blue-700' : 'bg-white border-gray-200 text-gray-500'}`}
                        >
-                           {r.supplierName} {r.status === 'final' && '✅'}
+                           {r.supplierName}
                        </button>
                    ))}
                </div>
@@ -1456,40 +1470,32 @@ const ResultsView = ({ quote, setView }) => {
           </div>
         ) : (
           <div className="space-y-8">
-             {/* Totals */}
+             {/* Cards de Totais */}
             <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
               {Object.entries(basketTotals.totals)
                 .filter(([name]) => visibleSuppliers.includes(name))
                 .map(([supplier, total]) => {
-                  const response = responses.find(r => r.supplierName === supplier);
-                  const isFinal = response?.status === 'final';
-                  const isWinner = (basketTotals.winnersCount[supplier] || 0) > 0;
+                  const hasWins = (basketTotals.winnersCount[supplier] || 0) > 0;
                   
                   return (
-                    <Card key={supplier} className={`p-4 border-l-4 ${isFinal ? 'border-l-green-500 bg-green-50/30' : 'border-l-blue-500'} relative overflow-visible group`}>
+                    <Card key={supplier} className={`p-4 border-l-4 border-l-blue-500 relative overflow-visible group`}>
                     <div className="flex justify-between items-start">
                         <div>
                             <p className="text-xs text-gray-500 uppercase font-bold">Total Cotação</p>
                             <h3 className="font-bold text-gray-800 truncate flex items-center gap-1">
                                 {supplier}
-                                {isFinal && <CheckCircle size={14} className="text-green-600" />}
                             </h3>
                         </div>
-                        {isFinal ? 
-                            <span className="text-[10px] bg-green-100 text-green-700 px-2 py-0.5 rounded-full font-bold uppercase">Finalizado</span> :
-                            <span className="text-[10px] bg-yellow-100 text-yellow-700 px-2 py-0.5 rounded-full font-bold uppercase">Rascunho</span>
-                        }
                     </div>
                     <p className="text-2xl font-bold text-blue-600 mt-2">
                         {total.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })}
                     </p>
                     
-                    {/* Botão WhatsApp só aparece se venceu algo */}
-                    {isWinner && (
+                    {/* Botão WhatsApp aparece se tiver ganhado algo (mesmo empate) */}
+                    {hasWins && (
                         <button 
                             onClick={() => handleWhatsApp(supplier)}
                             className="absolute -bottom-3 -right-3 bg-[#25D366] text-white p-2 rounded-full shadow-lg hover:bg-[#128C7E] transition-transform hover:scale-110 flex items-center gap-1 text-xs font-bold pr-3"
-                            title="Enviar pedido no WhatsApp"
                         >
                             <MessageCircle size={16} /> Pedir
                         </button>
@@ -1499,17 +1505,16 @@ const ResultsView = ({ quote, setView }) => {
               })}
             </div>
 
-            {/* Table */}
+            {/* Tabela de Comparação */}
             <div className="bg-white rounded-xl shadow-sm border overflow-hidden overflow-x-auto">
               <table className="w-full text-sm text-left">
                 <thead className="bg-gray-50 text-gray-700 font-bold border-b">
                   <tr>
                     <th className="p-4 min-w-[200px] sticky left-0 bg-gray-50 border-r z-10">Produto</th>
-                    <th className="p-4 min-w-[150px] text-center bg-yellow-50 text-yellow-800 border-r border-yellow-100">🏆 Vencedor</th>
+                    <th className="p-4 min-w-[150px] text-center bg-gray-100 border-r border-gray-200">Vencedor</th>
                     {responses.filter(r => visibleSuppliers.includes(r.supplierName)).map(r => (
                       <th key={r.id} className="p-4 min-w-[120px] text-center">
                           {r.supplierName}
-                          {r.status === 'final' && <span className="ml-1 text-green-500" title="Finalizado">●</span>}
                       </th>
                     ))}
                   </tr>
@@ -1517,33 +1522,58 @@ const ResultsView = ({ quote, setView }) => {
                 <tbody className="divide-y">
                   {comparison.map((row, i) => (
                     <tr key={i} className="hover:bg-gray-50/50">
-                      <td className="p-4 sticky left-0 bg-white border-r font-medium text-gray-800 z-10">
-                        {row.item.name}
-                        <div className="text-xs text-gray-400 font-normal">{row.item.quantity}</div>
+                      {/* Coluna Produto */}
+                      <td className={`p-4 sticky left-0 border-r z-10 ${row.isTie ? 'bg-yellow-50' : 'bg-white'}`}>
+                        <div className="flex items-center gap-2">
+                            {row.isTie && <AlertTriangle size={16} className="text-yellow-600" />}
+                            <div>
+                                <div className="font-medium text-gray-800">{row.item.name}</div>
+                                <div className="text-xs text-gray-400 font-normal">{row.item.quantity}</div>
+                            </div>
+                        </div>
                       </td>
-                      <td className="p-4 text-center bg-yellow-50/30 border-r border-yellow-100">
-                         {row.winner ? (
-                             <div className="flex flex-col items-center">
-                                 <span className="font-bold text-yellow-700">{row.winner}</span>
-                                 <span className="text-xs font-bold bg-green-100 text-green-700 px-2 rounded-full">
-                                     R$ {isFinite(row.minPrice) ? row.minPrice.toFixed(2) : '-'}
+
+                      {/* Coluna Vencedor */}
+                      <td className="p-4 text-center bg-gray-50/50 border-r border-gray-200">
+                         {row.winners.length > 0 ? (
+                             row.isTie ? (
+                                 <span className="font-bold text-yellow-700 bg-yellow-100 px-2 py-1 rounded text-xs">
+                                     EMPATE ({row.winners.length})
                                  </span>
-                             </div>
+                             ) : (
+                                 <div className="flex flex-col items-center">
+                                    <span className="font-bold text-green-700">{row.winners[0]}</span>
+                                    <span className="text-xs text-green-600">
+                                        R$ {isFinite(row.minPrice) ? row.minPrice.toFixed(2) : '-'}
+                                    </span>
+                                 </div>
+                             )
                          ) : <span className="text-gray-300">-</span>}
                       </td>
+
+                      {/* Colunas dos Fornecedores */}
                       {row.prices
                         .filter(p => visibleSuppliers.includes(p.supplier))
                         .map((p, idx) => {
-                        const isWinner = row.winner === p.supplier;
+                        const isWinner = row.winners.includes(p.supplier);
+                        
+                        // Define cor da célula: Amarelo se empate, Verde se vitória única
+                        let cellClass = "";
+                        if (isWinner) {
+                            cellClass = row.isTie ? "bg-yellow-100/50 text-yellow-800 font-bold" : "bg-green-50 text-green-700 font-bold";
+                        } else {
+                            cellClass = "text-gray-600";
+                        }
+
                         return (
-                          <td key={idx} className={`p-4 text-center border-l relative ${isWinner ? 'bg-green-50' : ''}`}>
-                            <div className={`font-medium ${isWinner ? 'text-green-700 font-bold' : 'text-gray-600'}`}>
+                          <td key={idx} className={`p-4 text-center border-l relative ${cellClass}`}>
+                            <div>
                                {p.raw === '-' ? '-' : `R$ ${p.raw}`}
                             </div>
                             {p.note && (
                                 <div className="group absolute top-1 right-1">
                                     <MessageSquare size={14} className="text-blue-400 cursor-help" />
-                                    <div className="hidden group-hover:block absolute bottom-full right-0 w-48 p-2 bg-gray-800 text-white text-xs rounded shadow-lg z-20 mb-1 text-left">
+                                    <div className="hidden group-hover:block absolute bottom-full right-0 w-48 p-2 bg-gray-800 text-white text-xs rounded shadow-lg z-20 mb-1 text-left font-normal">
                                         Obs: {p.note}
                                     </div>
                                 </div>
