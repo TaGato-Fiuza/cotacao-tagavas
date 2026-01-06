@@ -18,7 +18,7 @@ import {
 } from 'firebase/firestore';
 
 // ⚠️ NO SEU COMPUTADOR: Descomente a linha abaixo para a câmera funcionar!
-import { Html5Qrcode } from 'html5-qrcode';
+// import { Html5Qrcode } from 'html5-qrcode';
 
 import { 
   Plus, 
@@ -1331,6 +1331,7 @@ const ResultsView = ({ quote, setView }) => {
     comparison.forEach(row => {
         if(row.winner === supplierName) {
             hasItems = true;
+            // Remove colchetes e total estimado, mantendo apenas item e preço
             const price = isFinite(row.minPrice) ? row.minPrice.toFixed(2) : "0.00";
             // CORREÇÃO: Ordem: Quantidade - Item - Preço
             msg += `${row.item.quantity} ${row.item.unit || ''} - ${row.item.name} - (R$ ${price})\n`;
@@ -1456,7 +1457,7 @@ const ResultsView = ({ quote, setView }) => {
           </div>
         ) : (
           <div className="space-y-8">
-             {/* Cards de Totais */}
+             {/* Totals */}
             <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
               {Object.entries(basketTotals.totals)
                 .filter(([name]) => visibleSuppliers.includes(name))
@@ -1506,16 +1507,7 @@ const ResultsView = ({ quote, setView }) => {
                   </tr>
                 </thead>
                 <tbody className="divide-y">
-                  {comparison
-                    .filter(row => {
-                        // FILTRO: Se a linha tem vencedor e nenhum dos vencedores está visível, esconde.
-                        if (row.winners.length > 0) {
-                            const isWinnerVisible = row.winners.some(w => visibleSuppliers.includes(w));
-                            if (!isWinnerVisible) return false;
-                        }
-                        return true;
-                    })
-                    .map((row, i) => (
+                  {comparison.map((row, i) => (
                     <tr key={i} className="hover:bg-gray-50/50">
                       {/* Coluna Produto */}
                       <td className={`p-4 sticky left-0 border-r z-10 ${row.isTie ? 'bg-yellow-50' : 'bg-white'}`}>
@@ -1530,19 +1522,13 @@ const ResultsView = ({ quote, setView }) => {
 
                       {/* Coluna Vencedor */}
                       <td className="p-4 text-center bg-gray-50/50 border-r border-gray-200">
-                         {row.winners.length > 0 ? (
-                             row.isTie ? (
-                                 <span className="font-bold text-yellow-700 bg-yellow-100 px-2 py-1 rounded text-xs">
-                                     EMPATE ({row.winners.length})
+                         {row.winner ? (
+                             <div className="flex flex-col items-center">
+                                 <span className="font-bold text-yellow-700">{row.winner}</span>
+                                 <span className="text-xs font-bold bg-green-100 text-green-700 px-2 rounded-full">
+                                     R$ {isFinite(row.minPrice) ? row.minPrice.toFixed(2) : '-'}
                                  </span>
-                             ) : (
-                                 <div className="flex flex-col items-center">
-                                    <span className="font-bold text-green-700">{row.winners[0]}</span>
-                                    <span className="text-xs text-green-600">
-                                        R$ {isFinite(row.minPrice) ? row.minPrice.toFixed(2) : '-'}
-                                    </span>
-                                 </div>
-                             )
+                             </div>
                          ) : <span className="text-gray-300">-</span>}
                       </td>
 
@@ -1550,7 +1536,7 @@ const ResultsView = ({ quote, setView }) => {
                       {row.prices
                         .filter(p => visibleSuppliers.includes(p.supplier))
                         .map((p, idx) => {
-                        const isWinner = row.winners.includes(p.supplier);
+                        const isWinner = row.winner === p.supplier;
                         
                         // Define cor da célula: Amarelo se empate, Verde se vitória única
                         let cellClass = "";
