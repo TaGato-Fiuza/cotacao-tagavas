@@ -7,17 +7,18 @@ import {
   addDoc, 
   doc, 
   getDoc, 
-  updateDoc,
+  updateDoc, 
   deleteDoc, 
   setDoc, 
   onSnapshot, 
-  serverTimestamp,
-  query,
-  where,
+  serverTimestamp, 
+  query, 
+  where, 
   getDocs
 } from 'firebase/firestore';
 
-// ⚠️ NO SEU COMPUTADOR: Descomente a linha abaixo para a câmera funcionar!
+// ⚠️ Se o pacote 'html5-qrcode' não estiver instalado, mantenha comentado para evitar erros de compilação.
+// O Scanner Híbrido abaixo tratará a ausência da biblioteca mostrando a tela de simulação.
 import { Html5Qrcode } from 'html5-qrcode';
 
 import { 
@@ -29,33 +30,34 @@ import {
   ShoppingCart, 
   ChevronRight, 
   ArrowLeft, 
-  DollarSign,
+  DollarSign, 
   Loader2,
-  Send,
-  X,
-  Lock,
-  Unlock,
-  LogOut,
-  Filter,
-  Download,
-  MessageSquare,
-  AlertCircle,
-  Trophy,
-  Copy,
-  MessageCircle,
-  Save,
-  Edit3,
-  User,
-  Key,
-  Pencil,
-  Archive,
-  Eye,
-  EyeOff,
-  RefreshCw,
-  ScanBarcode,
-  Camera,
-  FileText,
-  AlertTriangle 
+  Send, 
+  X, 
+  Lock, 
+  Unlock, 
+  LogOut, 
+  Filter, 
+  Download, 
+  MessageSquare, 
+  AlertCircle, 
+  Trophy, 
+  Copy, 
+  MessageCircle, 
+  Save, 
+  Edit3, 
+  User, 
+  Key, 
+  Pencil, 
+  Archive, 
+  Eye, 
+  EyeOff, 
+  RefreshCw, 
+  ScanBarcode, 
+  Camera, 
+  FileText, 
+  AlertTriangle,
+  FileSpreadsheet // <--- Adicionado aqui para corrigir o crash
 } from 'lucide-react';
 
 // --- Configuração Firebase ---
@@ -129,7 +131,7 @@ const Input = ({ label, value, onChange, placeholder, type = "text", className =
     {label && <label className="text-sm font-medium text-gray-600">{label}</label>}
     <input
       type={type}
-      value={value}
+      value={value || ''} // Proteção contra undefined
       onChange={onChange}
       onKeyDown={onKeyDown}
       placeholder={placeholder}
@@ -147,11 +149,15 @@ const BarcodeScanner = ({ onDetected, onClose }) => {
   useEffect(() => {
     isMounted.current = true;
     
-    if (typeof Html5Qrcode === 'undefined') {
+    // Verifica se Html5Qrcode está disponível globalmente ou via import
+    // Como comentamos o import, ele cairá no mock, a menos que esteja no bundle
+    if (typeof window.Html5Qrcode === 'undefined' && typeof Html5Qrcode === 'undefined') {
       setUseMock(true);
       return;
     }
 
+    // Pega a referência correta da classe
+    const Html5QrcodeClass = window.Html5Qrcode || Html5Qrcode;
     let html5QrCode;
 
     const startScanner = async () => {
@@ -159,7 +165,7 @@ const BarcodeScanner = ({ onDetected, onClose }) => {
       if (!document.getElementById("reader")) return;
 
       try {
-        html5QrCode = new Html5Qrcode("reader");
+        html5QrCode = new Html5QrcodeClass("reader");
         scannerRef.current = html5QrCode;
 
         const config = { 
@@ -182,8 +188,9 @@ const BarcodeScanner = ({ onDetected, onClose }) => {
       } catch (err) {
         if (isMounted.current) {
             console.error("Erro Câmera:", err);
-            alert("Erro ao acessar câmara: " + err);
-            onClose();
+            // alert("Erro ao acessar câmara: " + err);
+            // Fallback para mock em caso de erro de permissão ou hardware
+            setUseMock(true); 
         }
       }
     };
@@ -209,7 +216,7 @@ const BarcodeScanner = ({ onDetected, onClose }) => {
               [Visualização]
            </div>
            <p className="text-sm text-red-500 mb-4 font-medium">
-             A biblioteca 'html5-qrcode' não foi detectada.
+             Câmera não disponível neste ambiente.
            </p>
            <Button variant="secondary" className="w-full" onClick={onClose}>Cancelar</Button>
         </div>
@@ -478,9 +485,9 @@ const AdminDashboard = ({ userId, setView, setCurrentQuote }) => {
 
   const handleCopy = (text) => {
     if (navigator.clipboard && window.isSecureContext) {
-       navigator.clipboard.writeText(text).then(() => alert("Código copiado!")).catch(() => fallbackCopy(text));
+        navigator.clipboard.writeText(text).then(() => alert("Código copiado!")).catch(() => fallbackCopy(text));
     } else {
-       fallbackCopy(text);
+        fallbackCopy(text);
     }
   };
 
@@ -717,12 +724,22 @@ const AdminDashboard = ({ userId, setView, setCurrentQuote }) => {
 
 // 3. Criar/Editar Cotação
 const CreateQuote = ({ userId, setView, editingQuote }) => {
-  const [title, setTitle] = useState(editingQuote ? editingQuote.title : '');
-  const [items, setItems] = useState(
-      editingQuote 
-      ? editingQuote.items.map(i => ({...i, id: i.id || generateId()})) 
-      : [{ id: generateId(), name: '', quantity: '1', unit: 'un' }]
-  );
+  const [title, setTitle] = useState(editingQuote ? editingQuote.title || '' : '');
+  const [items, setItems] = useState(() => {
+     if (editingQuote) {
+        // Garante que items seja sempre um array para evitar crash no map
+        const safeItems = Array.isArray(editingQuote.items) ? editingQuote.items : [];
+        return safeItems.map(i => ({
+            ...i, 
+            id: i.id || generateId(),
+            name: i.name || '', 
+            quantity: i.quantity || '', 
+            unit: i.unit || 'un'
+        }));
+     }
+     return [{ id: generateId(), name: '', quantity: '1', unit: 'un' }];
+  });
+
   const [isSubmitting, setIsSubmitting] = useState(false);
   
   const [barcode, setBarcode] = useState("");
@@ -1224,6 +1241,9 @@ const ResultsView = ({ quote, setView }) => {
       const filtered = allResponses.filter(r => r.quoteId === quote.id);
       setResponses(filtered);
       setLoading(false);
+    }, (error) => {
+        console.error("Erro snapshot:", error);
+        setLoading(false);
     });
     return () => unsub();
   }, [quote]); 
@@ -1538,7 +1558,7 @@ const ResultsView = ({ quote, setView }) => {
 
                       {/* Coluna Vencedor */}
                       <td className="p-4 text-center bg-gray-50/50 border-r border-gray-200">
-                         {row.winners.length > 0 ? (
+                          {row.winners.length > 0 ? (
                              row.isTie ? (
                                  <span className="font-bold text-yellow-700 bg-yellow-100 px-2 py-1 rounded text-xs">
                                      EMPATE ({row.winners.length})
@@ -1551,7 +1571,7 @@ const ResultsView = ({ quote, setView }) => {
                                     </span>
                                  </div>
                              )
-                         ) : <span className="text-gray-300">-</span>}
+                          ) : <span className="text-gray-300">-</span>}
                       </td>
 
                       {/* Colunas dos Fornecedores */}
