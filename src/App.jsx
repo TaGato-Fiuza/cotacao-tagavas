@@ -1339,7 +1339,8 @@ const ResultsView = ({ quote, setView }) => {
       });
 
       row.prices.forEach(p => {
-        if (p.price && row.item.quantity) {
+        // Agora soma APENAS se o fornecedor for um dos vencedores deste item
+        if (p.price && row.item.quantity && row.winners.includes(p.supplier)) {
            // ⚠️ Proteção: Garante que quantity seja tratada como número
            const qtyString = String(row.item.quantity).replace(',', '.');
            const qty = parseFloat(qtyString) || 0;
@@ -1362,7 +1363,7 @@ const ResultsView = ({ quote, setView }) => {
             hasItems = true;
             const price = isFinite(row.minPrice) ? row.minPrice.toFixed(2) : "0.00";
             // CORREÇÃO: Quantidade - Item - Preço
-            msg += `${row.item.quantity} ${row.item.unit || ''} - ${row.item.name} - (R$ ${price})\n`;
+            msg += `${row.item.quantity} - ${row.item.name} - (R$ ${price})\n`;
         }
     });
 
@@ -1393,7 +1394,7 @@ const ResultsView = ({ quote, setView }) => {
         winsBySupplier[supplier].forEach(item => {
             const price = isFinite(item.price) ? item.price.toFixed(2) : "0.00";
             // CORREÇÃO: Quantidade - Item - Preço
-            exportText += `${item.qty} ${item.unit || ''} - ${item.name} - (R$ ${price})\n`;
+            exportText += `${item.qty} - ${item.name} - (R$ ${price})\n`;
         });
         exportText += `\n`;
     });
