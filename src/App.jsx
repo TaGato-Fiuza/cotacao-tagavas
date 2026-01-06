@@ -17,8 +17,8 @@ import {
   getDocs
 } from 'firebase/firestore';
 
-// ⚠️ NO SEU COMPUTADOR: Descomente a linha abaixo para a câmara funcionar!
-import { Html5Qrcode } from 'html5-qrcode';
+// ⚠️ NO SEU COMPUTADOR: Descomente a linha abaixo para a câmera funcionar!
+// import { Html5Qrcode } from 'html5-qrcode';
 
 import { 
   Plus, 
@@ -292,7 +292,7 @@ const HomeScreen = ({ setView }) => {
   );
 };
 
-// 1.1 Login do Admin
+// 1.1 Login do Admin (Seguro)
 const AdminLogin = ({ setView }) => {
   const [username, setUsername] = useState("");
   const [password, setPassword] = useState("");
@@ -366,6 +366,7 @@ const SupplierLogin = ({ setView, setSupplierAuth }) => {
         return;
       }
 
+      // Verifica apenas na coleção de respostas
       const q = query(
         getCollectionRef('responses'),
         where('quoteId', '==', code.toUpperCase()),
@@ -912,6 +913,7 @@ const CreateQuote = ({ userId, setView, editingQuote }) => {
                     <ScanBarcode size={18} />
                     <span>Adicionar por Código</span>
                  </div>
+                 {/* Botão de Importar Excel */}
                  <div className="relative">
                     <input 
                         type="file" 
@@ -1153,7 +1155,7 @@ const SupplierView = ({ supplierAuth, setView }) => {
               <div className="flex items-center justify-between gap-4 mb-2">
                 <div className="flex-1">
                     <p className="font-bold text-gray-800">{item.name}</p>
-                    <p className="text-sm text-gray-500">Qtd: {item.quantity} {item.unit}</p>
+                    <p className="text-sm text-gray-500">Qtd: {item.quantity}</p>
                 </div>
                 <div className="w-32">
                     <label className="text-xs text-gray-500 mb-1 block">Preço Unit. (R$)</label>
@@ -1331,7 +1333,7 @@ const ResultsView = ({ quote, setView }) => {
             hasItems = true;
             // Remove colchetes e total estimado, mantendo apenas item e preço
             const price = isFinite(row.minPrice) ? row.minPrice.toFixed(2) : "0.00";
-            msg += `${row.item.name} - ${row.item.quantity}${row.item.unit || ''} (R$ ${price})\n`;
+            msg += `${row.item.name} - ${row.item.quantity} (R$ ${price})\n`;
         }
     });
 
@@ -1361,7 +1363,7 @@ const ResultsView = ({ quote, setView }) => {
         exportText += `-----------------------------------\n`;
         winsBySupplier[supplier].forEach(item => {
             const price = isFinite(item.price) ? item.price.toFixed(2) : "0.00";
-            exportText += `${item.name} - ${item.qty}${item.unit || ''} (R$ ${price})\n`;
+            exportText += `${item.name} - ${item.qty} (R$ ${price})\n`;
         });
         exportText += `\n`;
     });
@@ -1408,6 +1410,7 @@ const ResultsView = ({ quote, setView }) => {
                 </div>
            </div>
            
+           {/* Área de Credenciais (Admin Only) */}
            {showCredentials && (
              <div className="bg-yellow-50 border border-yellow-200 rounded-lg p-3 animate-in slide-in-from-top-2">
                <h3 className="text-xs font-bold text-yellow-800 uppercase mb-2 flex items-center gap-2">
