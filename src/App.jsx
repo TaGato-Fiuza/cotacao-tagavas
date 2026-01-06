@@ -909,9 +909,23 @@ const CreateQuote = ({ userId, setView, editingQuote }) => {
           />
           
           <div className="bg-blue-50 border border-blue-100 rounded-xl p-4">
-             <div className="flex items-center gap-2 mb-2 text-blue-800 font-bold text-sm">
-                <ScanBarcode size={18} />
-                <span>Adicionar por Código de Barras</span>
+             <div className="flex items-center justify-between mb-2">
+                 <div className="flex items-center gap-2 text-blue-800 font-bold text-sm">
+                    <ScanBarcode size={18} />
+                    <span>Adicionar por Código</span>
+                 </div>
+                 <div className="relative">
+                    <input 
+                        type="file" 
+                        accept=".xlsx, .xls" 
+                        onChange={handleImportExcel}
+                        className="hidden"
+                        id="excel-upload"
+                    />
+                    <label htmlFor="excel-upload" className="flex items-center gap-1 text-xs text-green-700 bg-green-100 px-2 py-1 rounded cursor-pointer hover:bg-green-200 transition-colors">
+                        <FileSpreadsheet size={14} /> Importar Excel
+                    </label>
+                 </div>
              </div>
              <div className="flex gap-2 flex-wrap sm:flex-nowrap">
                 <input 
@@ -937,7 +951,6 @@ const CreateQuote = ({ userId, setView, editingQuote }) => {
                     <Camera size={18}/>
                 </Button>
              </div>
-             <p className="text-xs text-blue-600 mt-2">Use o leitor ou a câmera para adicionar itens auto.</p>
           </div>
         </Card>
 
@@ -1318,8 +1331,8 @@ const ResultsView = ({ quote, setView }) => {
     comparison.forEach(row => {
         if(row.winner === supplierName) {
             hasItems = true;
-            // Remove colchetes e total estimado, mantendo apenas item e preço
             const price = isFinite(row.minPrice) ? row.minPrice.toFixed(2) : "0.00";
+            // CORREÇÃO: Ordem: Quantidade - Item - Preço
             msg += `${row.item.quantity} ${row.item.unit || ''} - ${row.item.name} - (R$ ${price})\n`;
         }
     });
@@ -1350,7 +1363,8 @@ const ResultsView = ({ quote, setView }) => {
         exportText += `-----------------------------------\n`;
         winsBySupplier[supplier].forEach(item => {
             const price = isFinite(item.price) ? item.price.toFixed(2) : "0.00";
-            exportText += `${item.qty} ${item.unit || ''} - ${item.name} (R$ ${price})\n`;
+            // CORREÇÃO: Ordem: Quantidade - Item - Preço
+            exportText += `${item.qty} ${item.unit || ''} - ${item.name} - (R$ ${price})\n`;
         });
         exportText += `\n`;
     });
@@ -1397,7 +1411,6 @@ const ResultsView = ({ quote, setView }) => {
                 </div>
            </div>
            
-           {/* Área de Senhas */}
            {showCredentials && (
              <div className="bg-yellow-50 border border-yellow-200 rounded-lg p-3 animate-in slide-in-from-top-2">
                <h3 className="text-xs font-bold text-yellow-800 uppercase mb-2 flex items-center gap-2">
@@ -1424,7 +1437,7 @@ const ResultsView = ({ quote, setView }) => {
                         onClick={() => toggleSupplierVisibility(r.supplierName)}
                         className={`px-3 py-1 text-xs rounded-full border ${visibleSuppliers.includes(r.supplierName) ? 'bg-blue-100 border-blue-200 text-blue-700' : 'bg-white border-gray-200 text-gray-500'}`}
                        >
-                           {r.supplierName}
+                           {r.supplierName} {r.status === 'final' && '✅'}
                        </button>
                    ))}
                </div>
@@ -1493,7 +1506,16 @@ const ResultsView = ({ quote, setView }) => {
                   </tr>
                 </thead>
                 <tbody className="divide-y">
-                  {comparison.map((row, i) => (
+                  {comparison
+                    .filter(row => {
+                        // FILTRO: Se a linha tem vencedor e nenhum dos vencedores está visível, esconde.
+                        if (row.winners.length > 0) {
+                            const isWinnerVisible = row.winners.some(w => visibleSuppliers.includes(w));
+                            if (!isWinnerVisible) return false;
+                        }
+                        return true;
+                    })
+                    .map((row, i) => (
                     <tr key={i} className="hover:bg-gray-50/50">
                       {/* Coluna Produto */}
                       <td className={`p-4 sticky left-0 border-r z-10 ${row.isTie ? 'bg-yellow-50' : 'bg-white'}`}>
@@ -1501,7 +1523,7 @@ const ResultsView = ({ quote, setView }) => {
                             {row.isTie && <AlertTriangle size={16} className="text-yellow-600" />}
                             <div>
                                 <div className="font-medium text-gray-800">{row.item.name}</div>
-                                <div className="text-xs text-gray-400 font-normal">{row.item.quantity} {row.item.unit || ''}</div>
+                                <div className="text-xs text-gray-400 font-normal">{row.item.quantity}</div>
                             </div>
                         </div>
                       </td>
