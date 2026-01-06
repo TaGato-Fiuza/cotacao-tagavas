@@ -1132,13 +1132,13 @@ const ResultsView = ({ quote, setView }) => {
             {/* Adicionado max-h-full e flex-1 para ocupar espaço restante e permitir scroll interno */}
             <div className="bg-white rounded-xl shadow-sm border overflow-auto flex-1 relative">
               <table className="w-full text-sm text-left border-collapse">
-                <thead className="bg-gray-50 text-gray-700 font-bold border-b z-20">
+                <thead className="bg-gray-100 text-gray-700 font-bold border-b z-40">
                   <tr>
-                    {/* Header fixo (Sticky) */}
-                    <th className="p-4 min-w-[200px] sticky left-0 top-0 z-30 bg-gray-50 border-r border-b shadow-sm">Produto</th>
-                    <th className="p-4 min-w-[150px] text-center sticky top-0 z-20 bg-gray-100 border-r border-b border-gray-200 shadow-sm">Vencedor</th>
+                    {/* Header fixo (Sticky) - Z-index AUMENTADO e BG definido */}
+                    <th className="p-4 min-w-[200px] sticky left-0 top-0 z-50 bg-gray-100 border-r border-b border-gray-200 shadow-sm">Produto</th>
+                    <th className="p-4 min-w-[150px] text-center sticky top-0 z-40 bg-gray-100 border-r border-b border-gray-200 shadow-sm">Vencedor</th>
                     {responses.filter(r => visibleSuppliers.includes(r.supplierName)).map(r => (
-                      <th key={r.id} className="p-4 min-w-[120px] text-center sticky top-0 z-20 bg-gray-50 border-b shadow-sm">
+                      <th key={r.id} className="p-4 min-w-[120px] text-center sticky top-0 z-40 bg-gray-100 border-b border-gray-200 shadow-sm">
                           {r.supplierName}
                       </th>
                     ))}
@@ -1158,8 +1158,8 @@ const ResultsView = ({ quote, setView }) => {
                     })
                     .map((row, i) => (
                     <tr key={i} className="hover:bg-gray-50/50">
-                      {/* Coluna Produto */}
-                      <td className={`p-4 sticky left-0 border-r z-10 ${row.isTie ? 'bg-yellow-50' : 'bg-white'}`}>
+                      {/* Coluna Produto - Sticky Left */}
+                      <td className={`p-4 sticky left-0 border-r z-30 ${row.isTie ? 'bg-yellow-50' : 'bg-white'}`}>
                         <div className="flex items-center gap-2">
                             {row.isTie && <AlertTriangle size={16} className="text-yellow-600" />}
                             <div>
