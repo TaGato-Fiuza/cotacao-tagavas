@@ -17,7 +17,7 @@ import {
   getDocs
 } from 'firebase/firestore';
 
-// ⚠️ NO SEU COMPUTADOR: Descomente a linha abaixo para a câmera funcionar!
+// ⚠️ NO SEU COMPUTADOR: Descomente a linha abaixo para a câmara funcionar!
 import { Html5Qrcode } from 'html5-qrcode';
 
 import { 
@@ -53,7 +53,8 @@ import {
   EyeOff,
   RefreshCw,
   ScanBarcode,
-  Camera 
+  Camera,
+  FileSpreadsheet
 } from 'lucide-react';
 
 // --- Configuração Firebase ---
@@ -180,7 +181,7 @@ const BarcodeScanner = ({ onDetected, onClose }) => {
       } catch (err) {
         if (isMounted.current) {
             console.error("Erro Câmera:", err);
-            alert("Erro ao acessar câmera: " + err);
+            alert("Erro ao acessar câmara: " + err);
             onClose();
         }
       }
@@ -209,13 +210,6 @@ const BarcodeScanner = ({ onDetected, onClose }) => {
            <p className="text-sm text-red-500 mb-4 font-medium">
              A biblioteca 'html5-qrcode' não foi detectada.
            </p>
-           <p className="text-xs text-gray-500 mb-4">
-             Para usar a câmera real, descomente a linha "import" no código.
-             Agora, simule uma leitura:
-           </p>
-           <Button className="w-full mb-2" onClick={() => onDetected("7894900011517")}>
-             Simular Leitura (Coca-Cola)
-           </Button>
            <Button variant="secondary" className="w-full" onClick={onClose}>Cancelar</Button>
         </div>
       </div>
@@ -228,7 +222,7 @@ const BarcodeScanner = ({ onDetected, onClose }) => {
         <button onClick={onClose} className="absolute top-2 right-2 text-gray-400 hover:text-gray-600 z-10"><X size={24} /></button>
         <h3 className="text-center font-bold mb-4 text-gray-800">Lendo Código...</h3>
         <div id="reader" className="w-full overflow-hidden rounded-lg bg-gray-100 min-h-[300px]"></div>
-        <p className="text-xs text-center text-gray-500 mt-4">Aponte a câmera para o código de barras.</p>
+        <p className="text-xs text-center text-gray-500 mt-4">Aponte a câmara para o código de barras.</p>
         <Button variant="secondary" onClick={onClose} className="w-full mt-4">Cancelar</Button>
       </div>
     </div>
@@ -676,7 +670,7 @@ const AdminDashboard = ({ userId, setView, setCurrentQuote }) => {
                         <button 
                         onClick={(e) => {
                             e.stopPropagation();
-                            const text = `Olá! *${quote.title}*.\nAcesse o app: https://cotacao-tagavas.vercel.app/\nUse o código: *${quote.id}*`;
+                            const text = `Olá! Cotação *${quote.title}*.\nAcesse o app: https://cotacao-tagavas.vercel.app/\nUse o código: *${quote.id}*`;
                             handleCopy(text);
                         }}
                         className="flex-1 flex items-center justify-center gap-2 py-2 text-blue-600 text-sm font-medium hover:bg-blue-50 rounded-lg transition-colors"
@@ -745,6 +739,57 @@ const CreateQuote = ({ userId, setView, editingQuote }) => {
     if(items.length > 1) {
       setItems(items.filter(item => item.id !== id));
     }
+  };
+
+  // Função para Importar Excel
+  const handleImportExcel = (e) => {
+    const file = e.target.files[0];
+    if (!file) return;
+
+    import('xlsx').then(XLSX => processExcel(file, XLSX)).catch(err => {
+         console.error("XLSX not found", err);
+         alert("Erro ao carregar módulo XLSX. Verifique o package.json");
+    });
+  };
+
+  const processExcel = (file, XLSXLib) => {
+    const reader = new FileReader();
+    reader.onload = (evt) => {
+        const data = new Uint8Array(evt.target.result);
+        const workbook = XLSXLib.read(data, { type: 'array' });
+        const wsname = workbook.SheetNames[0];
+        const ws = workbook.Sheets[wsname];
+        const rows = XLSXLib.utils.sheet_to_json(ws, { header: 1 });
+
+        const newItems = [];
+        
+        rows.forEach((row, index) => {
+            if (index === 0 && row[0] && String(row[0]).toLowerCase().includes('quant')) return;
+            
+            const qty = row[0] ? String(row[0]) : '1';
+            const name = row[1] ? String(row[1]) : '';
+
+            if (name) {
+                newItems.push({
+                    id: generateId(),
+                    quantity: qty,
+                    name: name,
+                    unit: 'un' 
+                });
+            }
+        });
+
+        if (newItems.length > 0) {
+            setItems(prev => {
+                if(prev.length === 1 && !prev[0].name) return newItems;
+                return [...prev, ...newItems];
+            });
+            alert(`${newItems.length} itens importados!`);
+        } else {
+            alert("Nenhum item válido encontrado na planilha.");
+        }
+    };
+    reader.readAsArrayBuffer(file);
   };
 
   const fetchProductMetadata = async (code) => {
@@ -862,9 +907,23 @@ const CreateQuote = ({ userId, setView, editingQuote }) => {
           />
           
           <div className="bg-blue-50 border border-blue-100 rounded-xl p-4">
-             <div className="flex items-center gap-2 mb-2 text-blue-800 font-bold text-sm">
-                <ScanBarcode size={18} />
-                <span>Adicionar por Código de Barras</span>
+             <div className="flex items-center justify-between mb-2">
+                 <div className="flex items-center gap-2 text-blue-800 font-bold text-sm">
+                    <ScanBarcode size={18} />
+                    <span>Adicionar por Código</span>
+                 </div>
+                 <div className="relative">
+                    <input 
+                        type="file" 
+                        accept=".xlsx, .xls" 
+                        onChange={handleImportExcel}
+                        className="hidden"
+                        id="excel-upload"
+                    />
+                    <label htmlFor="excel-upload" className="flex items-center gap-1 text-xs text-green-700 bg-green-100 px-2 py-1 rounded cursor-pointer hover:bg-green-200 transition-colors">
+                        <FileSpreadsheet size={14} /> Importar Excel
+                    </label>
+                 </div>
              </div>
              <div className="flex gap-2 flex-wrap sm:flex-nowrap">
                 <input 
@@ -890,7 +949,6 @@ const CreateQuote = ({ userId, setView, editingQuote }) => {
                     <Camera size={18}/>
                 </Button>
              </div>
-             <p className="text-xs text-blue-600 mt-2">Use o leitor ou a câmera para adicionar itens auto.</p>
           </div>
         </Card>
 
@@ -1185,7 +1243,7 @@ const ResultsView = ({ quote, setView }) => {
 
   const comparison = useMemo(() => {
     // ⚠️ Proteção: Se quote não tem itens, retorna vazio (evita crash)
-    if (!quote.items || !Array.isArray(quote.items) || responses.length === 0) return [];
+    if (!quote.items || !Array.isArray(quote.items)) return [];
     
     // Filtra itens inválidos que podem ter sido salvos incorretamente
     const validItems = quote.items.filter(i => i && i.name);
@@ -1195,6 +1253,7 @@ const ResultsView = ({ quote, setView }) => {
       let winner = null;
 
       const priceData = responses.map(r => {
+        // Robustez: garante que r.prices e r.notes existam (evita crash com dados antigos)
         const safePrices = r.prices || {};
         const safeNotes = r.notes || {};
         
@@ -1250,6 +1309,7 @@ const ResultsView = ({ quote, setView }) => {
       }
       row.prices.forEach(p => {
         if (p.price && row.item.quantity) {
+           // ⚠️ Proteção: Garante que quantity seja tratada como número
            const qtyString = String(row.item.quantity).replace(',', '.');
            const qty = parseFloat(qtyString) || 0;
            totals[p.supplier] += (p.price * qty);
@@ -1269,8 +1329,9 @@ const ResultsView = ({ quote, setView }) => {
     comparison.forEach(row => {
         if(row.winner === supplierName) {
             hasItems = true;
+            // Remove colchetes e total estimado, mantendo apenas item e preço
             const price = isFinite(row.minPrice) ? row.minPrice.toFixed(2) : "0.00";
-            msg += `${row.item.name} - ${row.item.quantity} (R$ ${price})\n`;
+            msg += `${row.item.name} - ${row.item.quantity}${row.item.unit || ''} (R$ ${price})\n`;
         }
     });
 
@@ -1300,7 +1361,7 @@ const ResultsView = ({ quote, setView }) => {
         exportText += `-----------------------------------\n`;
         winsBySupplier[supplier].forEach(item => {
             const price = isFinite(item.price) ? item.price.toFixed(2) : "0.00";
-            exportText += `${item.name} - ${item.qty} (R$ ${price})\n`;
+            exportText += `${item.name} - ${item.qty}${item.unit || ''} (R$ ${price})\n`;
         });
         exportText += `\n`;
     });
