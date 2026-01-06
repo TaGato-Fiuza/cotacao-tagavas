@@ -20,7 +20,7 @@ import {
 
 // ⚠️ Se o pacote 'html5-qrcode' não estiver instalado, mantenha comentado para evitar erros de compilação.
 // O Scanner Híbrido abaixo tratará a ausência da biblioteca mostrando a tela de simulação.
-import { Html5Qrcode } from 'html5-qrcode';
+// import { Html5Qrcode } from 'html5-qrcode';
 
 import { 
   Plus, 
@@ -59,7 +59,9 @@ import {
   FileText, 
   AlertTriangle,
   FileSpreadsheet,
-  ListFilter // Adding Icon for the new filter toggle
+  ListFilter,
+  Pin,     // <--- NOVO
+  PinOff   // <--- NOVO
 } from 'lucide-react';
 
 // ... (Configuration and Helpers remain the same)
@@ -822,6 +824,7 @@ const ResultsView = ({ quote, setView }) => {
   const [showFilters, setShowFilters] = useState(false);
   const [showCredentials, setShowCredentials] = useState(false);
   const [showAllItems, setShowAllItems] = useState(false); // Toggle Filter State
+  const [isHeaderSticky, setIsHeaderSticky] = useState(true); // Toggle Sticky Header
 
   useEffect(() => {
     if(!quote) return;
@@ -1054,14 +1057,25 @@ const ResultsView = ({ quote, setView }) => {
                <div className="flex flex-col gap-3 bg-gray-50 p-3 rounded-lg border border-gray-200 animate-in slide-in-from-top-2">
                    <div className="flex items-center justify-between border-b border-gray-200 pb-2">
                         <span className="text-xs font-bold text-gray-500">Exibição:</span>
-                        {/* NOVO: Toggle de Filtro */}
-                        <button 
-                            onClick={() => setShowAllItems(!showAllItems)}
-                            className={`flex items-center gap-2 px-3 py-1.5 rounded-full text-xs font-medium transition-colors ${showAllItems ? 'bg-blue-600 text-white' : 'bg-gray-200 text-gray-600'}`}
-                        >
-                            <ListFilter size={14} />
-                            {showAllItems ? 'Mostrando Tudo' : 'Apenas Vencedores'}
-                        </button>
+                        <div className="flex gap-2">
+                            {/* Toggle de Sticky Header */}
+                            <button 
+                                onClick={() => setIsHeaderSticky(!isHeaderSticky)}
+                                className={`flex items-center gap-2 px-3 py-1.5 rounded-full text-xs font-medium transition-colors ${isHeaderSticky ? 'bg-blue-600 text-white' : 'bg-gray-200 text-gray-600'}`}
+                            >
+                                {isHeaderSticky ? <Pin size={14} /> : <PinOff size={14} />}
+                                {isHeaderSticky ? 'Cabeçalho Fixo' : 'Solto'}
+                            </button>
+
+                            {/* Toggle de Filtro */}
+                            <button 
+                                onClick={() => setShowAllItems(!showAllItems)}
+                                className={`flex items-center gap-2 px-3 py-1.5 rounded-full text-xs font-medium transition-colors ${showAllItems ? 'bg-blue-600 text-white' : 'bg-gray-200 text-gray-600'}`}
+                            >
+                                <ListFilter size={14} />
+                                {showAllItems ? 'Mostrando Tudo' : 'Apenas Vencedores'}
+                            </button>
+                        </div>
                    </div>
                    
                    <div className="flex gap-2 flex-wrap">
@@ -1132,13 +1146,13 @@ const ResultsView = ({ quote, setView }) => {
             {/* Adicionado max-h-full e flex-1 para ocupar espaço restante e permitir scroll interno */}
             <div className="bg-white rounded-xl shadow-sm border overflow-auto flex-1 relative">
               <table className="w-full text-sm text-left border-collapse">
-                <thead className="bg-gray-100 text-gray-700 font-bold border-b z-40">
+                <thead className={`bg-gray-100 text-gray-700 font-bold border-b ${isHeaderSticky ? 'z-40' : ''}`}>
                   <tr>
                     {/* Header fixo (Sticky) - Z-index AUMENTADO e BG definido */}
-                    <th className="p-4 min-w-[200px] sticky left-0 top-0 z-50 bg-gray-100 border-r border-b border-gray-200 shadow-sm">Produto</th>
-                    <th className="p-4 min-w-[150px] text-center sticky top-0 z-40 bg-gray-100 border-r border-b border-gray-200 shadow-sm">Vencedor</th>
+                    <th className={`p-4 min-w-[200px] border-r border-b border-gray-200 shadow-sm bg-gray-100 ${isHeaderSticky ? 'sticky left-0 top-0 z-50' : 'sticky left-0'}`}>Produto</th>
+                    <th className={`p-4 min-w-[150px] text-center border-r border-b border-gray-200 shadow-sm bg-gray-100 ${isHeaderSticky ? 'sticky top-0 z-40' : ''}`}>Vencedor</th>
                     {responses.filter(r => visibleSuppliers.includes(r.supplierName)).map(r => (
-                      <th key={r.id} className="p-4 min-w-[120px] text-center sticky top-0 z-40 bg-gray-100 border-b border-gray-200 shadow-sm">
+                      <th key={r.id} className={`p-4 min-w-[120px] text-center border-b border-gray-200 shadow-sm bg-gray-100 ${isHeaderSticky ? 'sticky top-0 z-40' : ''}`}>
                           {r.supplierName}
                       </th>
                     ))}
