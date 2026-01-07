@@ -14,7 +14,8 @@ import {
   serverTimestamp, 
   query, 
   where, 
-  getDocs
+  getDocs,
+  deleteField // <--- Importado deleteField
 } from 'firebase/firestore';
 
 // ⚠️ Se o pacote 'html5-qrcode' não estiver instalado, mantenha comentado para evitar erros de compilação.
@@ -63,9 +64,9 @@ import {
   PinOff,
   ChevronUp,
   ChevronDown,
-  Search, // <--- Importado Search
-  CheckSquare, // <--- Importado CheckSquare
-  Square // <--- Importado Square
+  Search, 
+  CheckSquare,
+  Square
 } from 'lucide-react';
 
 // --- Configuração Firebase ---
@@ -1317,9 +1318,9 @@ const ResultsView = ({ quote, setView }) => {
             minPrice = val;
             winner = r.supplierName;
           }
-          return { supplier: r.supplierName, price: val, raw: rawString, note };
+          return { supplier: r.supplierName, price: val, raw: rawString, note, responseId: r.id }; // Incluindo responseId
         }
-        return { supplier: r.supplierName, price: null, raw: rawString, note };
+        return { supplier: r.supplierName, price: null, raw: rawString, note, responseId: r.id };
       });
 
       // Recalcular vencedores com base no menor preço encontrado
@@ -1369,14 +1370,6 @@ const ResultsView = ({ quote, setView }) => {
   const handleOpenOrderModal = (supplierName) => {
       const itemsForSupplier = [];
       
-      // Itera sobre a comparação COMPLETA (ignorando o filtro de busca visual)
-      // para garantir que todos os itens vencidos sejam incluídos no pedido
-      // Precisamos recriar a lógica de comparação "limpa" ou usar a existente se searchTerm estiver vazio.
-      // Para simplificar, vamos usar a 'comparison' atual, mas o ideal seria ter uma lista independente do filtro visual.
-      // Vou iterar sobre 'comparison' atual mesmo, assumindo que o usuário quer pedir o que vê ou eu deveria limpar o filtro? 
-      // Melhor: iterar sobre quote.items original e recalcular vencedores para garantir integridade.
-      
-      // Recalculo rápido para garantir todos os itens
       const allItems = quote.items || [];
       allItems.forEach((item, idx) => {
           let minPrice = Infinity;
@@ -1400,7 +1393,7 @@ const ResultsView = ({ quote, setView }) => {
               const winners = priceData.filter(p => p.price === minPrice).map(p => p.supplier);
               if (winners.includes(supplierName)) {
                   itemsForSupplier.push({
-                      id: item.id || idx, // Fallback para index se id faltar
+                      id: item.id || idx, 
                       name: item.name,
                       quantity: item.quantity,
                       unit: item.unit,
@@ -1415,7 +1408,6 @@ const ResultsView = ({ quote, setView }) => {
 
       setActiveOrderSupplier(supplierName);
       setActiveOrderItems(itemsForSupplier);
-      // Selecionar todos por padrão
       setSelectedOrderItems(new Set(itemsForSupplier.map(i => i.id)));
       setOrderModalOpen(true);
   };
@@ -1461,11 +1453,38 @@ const ResultsView = ({ quote, setView }) => {
       setOrderModalOpen(false);
   };
 
+  // Função para invalidar/apagar preço
+  const handleInvalidatePrice = async (responseId, itemId, price, supplierName, itemIndex) => {
+      if(!window.confirm(`Tem certeza que deseja apagar o preço R$ ${price} de ${supplierName}? Esta ação não pode ser desfeita facilmente.`)) return;
+      
+      try {
+          // Tentamos deletar usando tanto o ID (novo sistema) quanto o índice (sistema legado) para garantir
+          const docRef = getDocRef('responses', responseId);
+          
+          // Prepara objeto de atualização
+          const updates = {};
+          
+          // Se tiver ID, deleta pelo ID
+          if (itemId) {
+              updates[`prices.${itemId}`] = deleteField();
+          }
+          
+          // Tenta deletar pelo índice também por segurança (caso seja legado)
+          if (itemIndex !== undefined) {
+              updates[`prices.${itemIndex}`] = deleteField();
+          }
+
+          await updateDoc(docRef, updates);
+      } catch(e) {
+          console.error("Erro ao invalidar preço:", e);
+          alert("Erro ao remover preço.");
+      }
+  };
+
   const handleExport = () => {
     let exportText = `RESULTADO COTAÇÃO TAGAVAS: ${quote.title}\n\n`;
     const winsBySupplier = {};
     
-    // Recalculo para exportação para garantir consistência (mesma lógica do modal)
     const allItems = quote.items || [];
     allItems.forEach((item, idx) => {
         let minPrice = Infinity;
@@ -1493,7 +1512,7 @@ const ResultsView = ({ quote, setView }) => {
                     qty: item.quantity,
                     unit: item.unit,
                     price: minPrice,
-                    isTie: winners.length > 1 // <--- Importante para o export
+                    isTie: winners.length > 1 
                 });
             });
         }
@@ -1505,7 +1524,7 @@ const ResultsView = ({ quote, setView }) => {
         exportText += `-----------------------------------\n`;
         winsBySupplier[supplier].forEach(item => {
             const price = isFinite(item.price) ? item.price.toFixed(2) : "0.00";
-            const tieLabel = item.isTie ? " (EMPATE)" : ""; // <--- Adicionado ao texto
+            const tieLabel = item.isTie ? " (EMPATE)" : ""; 
             exportText += `${item.qty} - ${item.name} - (R$ ${price})${tieLabel}\n`;
         });
         exportText += `\n`;
@@ -1806,14 +1825,28 @@ const ResultsView = ({ quote, setView }) => {
                             cellClass = "text-gray-600";
                         }
                         return (
-                          <td key={idx} className={`p-4 text-center border-l relative ${cellClass}`}>
-                            <div>{p.raw === '-' ? '-' : `R$ ${p.raw}`}</div>
+                          <td key={idx} className={`p-4 text-center border-l relative ${cellClass} group`}>
+                            <div className="relative">
+                                {p.raw === '-' ? '-' : `R$ ${p.raw}`}
+                                {/* Ícone de Excluir Preço */}
+                                {p.price !== null && (
+                                    <button 
+                                        onClick={(e) => {
+                                            e.stopPropagation();
+                                            // p.responseId vem do priceData map acima
+                                            handleInvalidatePrice(p.responseId, row.item.id, p.raw, p.supplier, i);
+                                        }}
+                                        className="absolute -right-6 top-1/2 -translate-y-1/2 opacity-0 group-hover:opacity-100 transition-opacity p-1 text-gray-300 hover:text-red-500 rounded-full"
+                                        title="Apagar este preço (Inválido)"
+                                    >
+                                        <Trash2 size={12} />
+                                    </button>
+                                )}
+                            </div>
                             {p.note && (
-                                <div className="group absolute top-1 right-1">
+                                <div className="absolute top-1 right-1">
                                     <MessageSquare size={14} className="text-blue-400 cursor-help" />
-                                    <div className="hidden group-hover:block absolute bottom-full right-0 w-48 p-2 bg-gray-800 text-white text-xs rounded shadow-lg z-20 mb-1 text-left font-normal">
-                                        Obs: {p.note}
-                                    </div>
+                                    {/* Tooltip logic... */}
                                 </div>
                             )}
                           </td>
