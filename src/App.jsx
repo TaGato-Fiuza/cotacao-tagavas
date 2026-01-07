@@ -19,7 +19,7 @@ import {
 
 // ⚠️ Se o pacote 'html5-qrcode' não estiver instalado, mantenha comentado para evitar erros de compilação.
 // O Scanner Híbrido abaixo tratará a ausência da biblioteca mostrando a tela de simulação.
-// import { Html5Qrcode } from 'html5-qrcode';
+import { Html5Qrcode } from 'html5-qrcode';
 
 import { 
   Plus, 
@@ -61,8 +61,11 @@ import {
   ListFilter,
   Pin,
   PinOff,
-  ChevronUp,   // <--- Adicionado (estava faltando e causando o erro)
-  ChevronDown  // <--- Adicionado (estava faltando e causando o erro)
+  ChevronUp,
+  ChevronDown,
+  Search, // <--- Importado Search
+  CheckSquare, // <--- Importado CheckSquare
+  Square // <--- Importado Square
 } from 'lucide-react';
 
 // --- Configuração Firebase ---
@@ -1235,9 +1238,16 @@ const ResultsView = ({ quote, setView }) => {
   const [visibleSuppliers, setVisibleSuppliers] = useState([]); 
   const [showFilters, setShowFilters] = useState(false);
   const [showCredentials, setShowCredentials] = useState(false);
-  const [showAllItems, setShowAllItems] = useState(false); // Toggle Filter State
-  const [isHeaderSticky, setIsHeaderSticky] = useState(true); // Toggle Sticky Header
-  const [showTotals, setShowTotals] = useState(true); // <--- NOVO: Toggle Totals Cards
+  const [showAllItems, setShowAllItems] = useState(false); 
+  const [isHeaderSticky, setIsHeaderSticky] = useState(true); 
+  const [showTotals, setShowTotals] = useState(true); 
+  const [searchTerm, setSearchTerm] = useState(""); // <--- NOVO: Estado de Busca
+
+  // Novos estados para o Modal de Pedido
+  const [orderModalOpen, setOrderModalOpen] = useState(false);
+  const [activeOrderSupplier, setActiveOrderSupplier] = useState(null);
+  const [activeOrderItems, setActiveOrderItems] = useState([]);
+  const [selectedOrderItems, setSelectedOrderItems] = useState(new Set()); // IDs dos itens selecionados para pedido
 
   useEffect(() => {
     if(!quote) return;
@@ -1270,11 +1280,13 @@ const ResultsView = ({ quote, setView }) => {
   if (!quote) return <div className="flex h-screen items-center justify-center"><Loader2 className="animate-spin text-blue-600" /></div>;
 
   const comparison = useMemo(() => {
-    // ⚠️ Proteção: Se quote não tem itens, retorna vazio (evita crash)
     if (!quote.items || !Array.isArray(quote.items)) return [];
     
-    // Filtra itens inválidos que podem ter sido salvos incorretamente
-    const validItems = quote.items.filter(i => i && i.name);
+    // Filtra itens inválidos e APLICA O FILTRO DE BUSCA AQUI
+    const validItems = quote.items.filter(i => {
+        const matchesSearch = !searchTerm || i.name.toLowerCase().includes(searchTerm.toLowerCase());
+        return i && i.name && matchesSearch;
+    });
 
     return validItems.map((item, idx) => {
       let minPrice = Infinity;
@@ -1285,7 +1297,6 @@ const ResultsView = ({ quote, setView }) => {
         const safeNotes = r.notes || {};
         
         let raw = undefined;
-        // Lógica Híbrida: Tenta pegar por ID (novo), depois pelo index (legado)
         if (item.id && safePrices[item.id] !== undefined) raw = safePrices[item.id];
         else if (safePrices[idx] !== undefined) raw = safePrices[idx];
         
@@ -1327,7 +1338,7 @@ const ResultsView = ({ quote, setView }) => {
         minPrice: minPrice === Infinity ? null : minPrice
       };
     });
-  }, [quote, responses]);
+  }, [quote, responses, searchTerm]); // Adicionei searchTerm na dependência
 
   const basketTotals = useMemo(() => {
     const totals = {};
@@ -1339,15 +1350,12 @@ const ResultsView = ({ quote, setView }) => {
     });
 
     comparison.forEach(row => {
-      // Se houver vencedores, incrementa para todos (mesmo se empate)
       row.winners.forEach(winnerName => {
          winnersCount[winnerName] = (winnersCount[winnerName] || 0) + 1;
       });
 
       row.prices.forEach(p => {
-        // Agora soma APENAS se o fornecedor for um dos vencedores deste item
         if (p.price && row.item.quantity && row.winners.includes(p.supplier)) {
-           // ⚠️ Proteção: Garante que quantity seja tratada como número
            const qtyString = String(row.item.quantity).replace(',', '.');
            const qty = parseFloat(qtyString) || 0;
            totals[p.supplier] += (p.price * qty);
@@ -1357,52 +1365,148 @@ const ResultsView = ({ quote, setView }) => {
     return { totals, winnersCount };
   }, [comparison, responses]);
 
-  const handleWhatsApp = (supplierName) => {
-    let msg = `RESULTADO COTAÇÃO TAGAVAS: ${quote.title}\n\n`;
-    msg += `-----------------------------------\n`;
-    msg += `PEDIDO PARA: ${supplierName.toUpperCase()}\n`;
-    msg += `-----------------------------------\n`;
-    
-    let hasItems = false;
-    comparison.forEach(row => {
-        if(row.winners.includes(supplierName)) {
-            hasItems = true;
-            const price = isFinite(row.minPrice) ? row.minPrice.toFixed(2) : "0.00";
-            // CORREÇÃO: Adicionado (EMPATE) de volta conforme solicitado
-            const tieLabel = row.isTie ? " (EMPATE)" : "";
-            // CORREÇÃO: Quantidade - Item - Preço
-            msg += `${row.item.quantity} - ${row.item.name} - (R$ ${price})${tieLabel}\n`;
-        }
-    });
+  // Função para abrir o Modal de Pedido
+  const handleOpenOrderModal = (supplierName) => {
+      const itemsForSupplier = [];
+      
+      // Itera sobre a comparação COMPLETA (ignorando o filtro de busca visual)
+      // para garantir que todos os itens vencidos sejam incluídos no pedido
+      // Precisamos recriar a lógica de comparação "limpa" ou usar a existente se searchTerm estiver vazio.
+      // Para simplificar, vamos usar a 'comparison' atual, mas o ideal seria ter uma lista independente do filtro visual.
+      // Vou iterar sobre 'comparison' atual mesmo, assumindo que o usuário quer pedir o que vê ou eu deveria limpar o filtro? 
+      // Melhor: iterar sobre quote.items original e recalcular vencedores para garantir integridade.
+      
+      // Recalculo rápido para garantir todos os itens
+      const allItems = quote.items || [];
+      allItems.forEach((item, idx) => {
+          let minPrice = Infinity;
+          const priceData = responses.map(r => {
+             const safePrices = r.prices || {};
+             let raw = undefined;
+             if (item.id && safePrices[item.id] !== undefined) raw = safePrices[item.id];
+             else if (safePrices[idx] !== undefined) raw = safePrices[idx];
+             
+             if (!raw) return { supplier: r.supplierName, price: null };
+             const val = parseFloat(String(raw).trim().replace(',', '.'));
+             return { supplier: r.supplierName, price: isNaN(val) ? null : val };
+          });
 
-    if (!hasItems) return alert("Este fornecedor não venceu nenhum item.");
-    
-    const url = `https://wa.me/?text=${encodeURIComponent(msg)}`;
-    window.open(url, '_blank');
+          // Achar menor preço
+          priceData.forEach(p => {
+              if (p.price !== null && p.price < minPrice) minPrice = p.price;
+          });
+
+          if (minPrice !== Infinity) {
+              const winners = priceData.filter(p => p.price === minPrice).map(p => p.supplier);
+              if (winners.includes(supplierName)) {
+                  itemsForSupplier.push({
+                      id: item.id || idx, // Fallback para index se id faltar
+                      name: item.name,
+                      quantity: item.quantity,
+                      unit: item.unit,
+                      price: minPrice,
+                      isTie: winners.length > 1
+                  });
+              }
+          }
+      });
+
+      if (itemsForSupplier.length === 0) return alert("Este fornecedor não venceu nenhum item.");
+
+      setActiveOrderSupplier(supplierName);
+      setActiveOrderItems(itemsForSupplier);
+      // Selecionar todos por padrão
+      setSelectedOrderItems(new Set(itemsForSupplier.map(i => i.id)));
+      setOrderModalOpen(true);
+  };
+
+  const toggleOrderItem = (id) => {
+      const newSet = new Set(selectedOrderItems);
+      if (newSet.has(id)) {
+          newSet.delete(id);
+      } else {
+          newSet.add(id);
+      }
+      setSelectedOrderItems(newSet);
+  };
+
+  const toggleSelectAllOrderItems = () => {
+      if (selectedOrderItems.size === activeOrderItems.length) {
+          setSelectedOrderItems(new Set()); // Deselecionar tudo
+      } else {
+          setSelectedOrderItems(new Set(activeOrderItems.map(i => i.id))); // Selecionar tudo
+      }
+  };
+
+  const handleConfirmOrder = () => {
+      let msg = `RESULTADO COTAÇÃO TAGAVAS: ${quote.title}\n\n`;
+      msg += `-----------------------------------\n`;
+      msg += `PEDIDO PARA: ${activeOrderSupplier.toUpperCase()}\n`;
+      msg += `-----------------------------------\n`;
+
+      let hasSelected = false;
+      activeOrderItems.forEach(item => {
+          if (selectedOrderItems.has(item.id)) {
+              hasSelected = true;
+              const price = isFinite(item.price) ? item.price.toFixed(2) : "0.00";
+              const tieLabel = item.isTie ? " (EMPATE)" : "";
+              msg += `${item.quantity} - ${item.name} - (R$ ${price})${tieLabel}\n`;
+          }
+      });
+
+      if (!hasSelected) return alert("Selecione pelo menos um item para pedir.");
+
+      const url = `https://wa.me/?text=${encodeURIComponent(msg)}`;
+      window.open(url, '_blank');
+      setOrderModalOpen(false);
   };
 
   const handleExport = () => {
     let exportText = `RESULTADO COTAÇÃO TAGAVAS: ${quote.title}\n\n`;
     const winsBySupplier = {};
-    comparison.forEach(row => {
-        row.winners.forEach(winner => {
-            if(!winsBySupplier[winner]) winsBySupplier[winner] = [];
-            winsBySupplier[winner].push({
-                name: row.item.name,
-                qty: row.item.quantity,
-                unit: row.item.unit,
-                price: row.minPrice
-            });
+    
+    // Recalculo para exportação para garantir consistência (mesma lógica do modal)
+    const allItems = quote.items || [];
+    allItems.forEach((item, idx) => {
+        let minPrice = Infinity;
+        const priceData = responses.map(r => {
+            const safePrices = r.prices || {};
+            let raw = undefined;
+            if (item.id && safePrices[item.id] !== undefined) raw = safePrices[item.id];
+            else if (safePrices[idx] !== undefined) raw = safePrices[idx];
+            
+            if (!raw) return { supplier: r.supplierName, price: null };
+            const val = parseFloat(String(raw).trim().replace(',', '.'));
+            return { supplier: r.supplierName, price: isNaN(val) ? null : val };
         });
+
+        priceData.forEach(p => {
+            if (p.price !== null && p.price < minPrice) minPrice = p.price;
+        });
+
+        if (minPrice !== Infinity) {
+            const winners = priceData.filter(p => p.price === minPrice).map(p => p.supplier);
+            winners.forEach(winner => {
+                if(!winsBySupplier[winner]) winsBySupplier[winner] = [];
+                winsBySupplier[winner].push({
+                    name: item.name,
+                    qty: item.quantity,
+                    unit: item.unit,
+                    price: minPrice,
+                    isTie: winners.length > 1 // <--- Importante para o export
+                });
+            });
+        }
     });
+
     Object.keys(winsBySupplier).forEach(supplier => {
         exportText += `-----------------------------------\n`;
         exportText += `PEDIDO PARA: ${supplier.toUpperCase()}\n`;
         exportText += `-----------------------------------\n`;
         winsBySupplier[supplier].forEach(item => {
             const price = isFinite(item.price) ? item.price.toFixed(2) : "0.00";
-            // CORREÇÃO: Quantidade - Item - Preço
-            exportText += `${item.qty} - ${item.name} - (R$ ${price})\n`;
+            const tieLabel = item.isTie ? " (EMPATE)" : ""; // <--- Adicionado ao texto
+            exportText += `${item.qty} - ${item.name} - (R$ ${price})${tieLabel}\n`;
         });
         exportText += `\n`;
     });
@@ -1422,26 +1526,98 @@ const ResultsView = ({ quote, setView }) => {
   };
 
   return (
-    // CORREÇÃO: Mudei de min-h-screen para h-screen e adicionei overflow-hidden.
-    // Isso força o layout a ter a altura exata da tela e rolar apenas internamente onde necessário.
-    <div className="h-screen bg-gray-50 flex flex-col overflow-hidden">
+    <div className="h-screen bg-gray-50 flex flex-col overflow-hidden relative">
+        {/* MODAL DE PEDIDO */}
+        {orderModalOpen && (
+            <div className="fixed inset-0 z-[60] bg-black/50 flex items-center justify-center p-4 backdrop-blur-sm">
+                <div className="bg-white rounded-xl shadow-2xl w-full max-w-2xl max-h-[90vh] flex flex-col">
+                    <div className="p-4 border-b border-gray-100 flex justify-between items-center bg-gray-50 rounded-t-xl">
+                        <div>
+                            <h3 className="text-lg font-bold text-gray-900">Gerar Pedido</h3>
+                            <p className="text-sm text-blue-600 font-medium">{activeOrderSupplier}</p>
+                        </div>
+                        <button onClick={() => setOrderModalOpen(false)} className="p-2 text-gray-400 hover:text-gray-600 rounded-full hover:bg-gray-200 transition-colors">
+                            <X size={20} />
+                        </button>
+                    </div>
+                    
+                    <div className="p-4 border-b border-gray-100 bg-white sticky top-0 z-10">
+                        <button 
+                            onClick={toggleSelectAllOrderItems}
+                            className="flex items-center gap-2 text-sm font-medium text-gray-600 hover:text-blue-600"
+                        >
+                            {selectedOrderItems.size === activeOrderItems.length ? <CheckSquare size={18} className="text-blue-600" /> : <Square size={18} />}
+                            {selectedOrderItems.size === activeOrderItems.length ? "Deselecionar Tudo" : "Selecionar Tudo"}
+                        </button>
+                    </div>
+
+                    <div className="overflow-y-auto p-4 space-y-2 flex-1">
+                        {activeOrderItems.map(item => (
+                            <div 
+                                key={item.id} 
+                                onClick={() => toggleOrderItem(item.id)}
+                                className={`flex items-center gap-3 p-3 rounded-lg border cursor-pointer transition-all ${selectedOrderItems.has(item.id) ? 'border-blue-500 bg-blue-50' : 'border-gray-200 hover:border-blue-300'}`}
+                            >
+                                <div className={`text-blue-600 ${selectedOrderItems.has(item.id) ? 'opacity-100' : 'opacity-30'}`}>
+                                    <CheckCircle size={20} />
+                                </div>
+                                <div className="flex-1">
+                                    <div className="flex items-center gap-2">
+                                        <span className="font-bold text-gray-800">{item.name}</span>
+                                        {item.isTie && <span className="text-[10px] bg-yellow-100 text-yellow-800 px-1.5 py-0.5 rounded font-bold border border-yellow-200">EMPATE</span>}
+                                    </div>
+                                    <div className="text-sm text-gray-500 flex justify-between">
+                                        <span>Qtd: {item.quantity}</span>
+                                        <span className="font-medium text-gray-900">R$ {item.price.toFixed(2)}</span>
+                                    </div>
+                                </div>
+                            </div>
+                        ))}
+                    </div>
+
+                    <div className="p-4 border-t border-gray-100 bg-gray-50 rounded-b-xl flex justify-end gap-3">
+                        <Button variant="secondary" onClick={() => setOrderModalOpen(false)}>Cancelar</Button>
+                        <Button 
+                            variant="whatsapp" 
+                            onClick={handleConfirmOrder}
+                            icon={MessageCircle}
+                        >
+                            Enviar Pedido ({selectedOrderItems.size})
+                        </Button>
+                    </div>
+                </div>
+            </div>
+        )}
+
        <header className="bg-white border-b sticky top-0 z-10 shadow-sm print:hidden flex-shrink-0">
         <div className="w-full px-4 py-4 flex flex-col gap-4">
-           <div className="flex items-center justify-between">
-                <div className="flex items-center gap-3">
+           <div className="flex flex-col sm:flex-row items-center justify-between gap-4"> {/* Ajustado para layout responsivo */}
+                <div className="flex items-center gap-3 w-full sm:w-auto">
                     <button onClick={() => setView('admin_dashboard')} className="p-2 -ml-2 text-gray-600 hover:bg-gray-100 rounded-full">
                     <ArrowLeft size={20} />
                     </button>
                     <div>
-                    <h1 className="font-bold text-lg text-gray-900">{quote?.title}</h1>
-                    <p className="text-xs text-gray-500">{responses.length} fornecedores responderam</p>
+                        <h1 className="font-bold text-lg text-gray-900">{quote?.title}</h1>
+                        <p className="text-xs text-gray-500">{responses.length} fornecedores responderam</p>
                     </div>
                 </div>
-                <div className="flex gap-2">
+
+                {/* NOVO: Barra de Busca Centralizada/Direita */}
+                <div className="relative w-full sm:max-w-md">
+                    <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400" size={18} />
+                    <input 
+                        type="text" 
+                        placeholder="Buscar produto..." 
+                        className="w-full pl-10 pr-4 py-2 bg-gray-100 border-transparent focus:bg-white border focus:border-blue-500 rounded-lg outline-none text-sm transition-all"
+                        value={searchTerm}
+                        onChange={(e) => setSearchTerm(e.target.value)}
+                    />
+                </div>
+
+                <div className="flex gap-2 w-full sm:w-auto justify-end">
                     {/* Botão de Toggle Cards */}
-                    <Button variant="ghost" className="text-sm px-3 hidden sm:flex" onClick={() => setShowTotals(!showTotals)} title={showTotals ? "Ocultar Cards de Totais" : "Ver Cards de Totais"}>
+                    <Button variant="ghost" className="text-sm px-3 hidden md:flex" onClick={() => setShowTotals(!showTotals)} title={showTotals ? "Ocultar Cards de Totais" : "Ver Cards de Totais"}>
                         {showTotals ? <ChevronUp size={18} /> : <ChevronDown size={18} />}
-                        Totais
                     </Button>
 
                     <Button variant="ghost" className="text-sm px-3" onClick={() => setShowCredentials(!showCredentials)} title="Ver Senhas dos Fornecedores">
@@ -1456,6 +1632,7 @@ const ResultsView = ({ quote, setView }) => {
                 </div>
            </div>
            
+           {/* ... (Show Credentials logic remains same) */}
            {showCredentials && (
              <div className="bg-yellow-50 border border-yellow-200 rounded-lg p-3 animate-in slide-in-from-top-2">
                <h3 className="text-xs font-bold text-yellow-800 uppercase mb-2 flex items-center gap-2">
@@ -1478,16 +1655,15 @@ const ResultsView = ({ quote, setView }) => {
                    <div className="flex items-center justify-between border-b border-gray-200 pb-2">
                         <span className="text-xs font-bold text-gray-500">Exibição:</span>
                         <div className="flex gap-2">
-                            {/* Toggle Cards (Mobile Version inside Filters) */}
+                            {/* Toggle Cards (Mobile) */}
                             <button 
                                 onClick={() => setShowTotals(!showTotals)}
-                                className={`flex sm:hidden items-center gap-2 px-3 py-1.5 rounded-full text-xs font-medium transition-colors ${showTotals ? 'bg-blue-100 text-blue-700' : 'bg-gray-200 text-gray-600'}`}
+                                className={`flex md:hidden items-center gap-2 px-3 py-1.5 rounded-full text-xs font-medium transition-colors ${showTotals ? 'bg-blue-100 text-blue-700' : 'bg-gray-200 text-gray-600'}`}
                             >
                                 {showTotals ? <ChevronUp size={14} /> : <ChevronDown size={14} />}
                                 {showTotals ? 'Ocultar Totais' : 'Ver Totais'}
                             </button>
 
-                            {/* Toggle de Sticky Header */}
                             <button 
                                 onClick={() => setIsHeaderSticky(!isHeaderSticky)}
                                 className={`flex items-center gap-2 px-3 py-1.5 rounded-full text-xs font-medium transition-colors ${isHeaderSticky ? 'bg-blue-600 text-white' : 'bg-gray-200 text-gray-600'}`}
@@ -1496,7 +1672,6 @@ const ResultsView = ({ quote, setView }) => {
                                 {isHeaderSticky ? 'Cabeçalho Fixo' : 'Solto'}
                             </button>
 
-                            {/* Toggle de Filtro */}
                             <button 
                                 onClick={() => setShowAllItems(!showAllItems)}
                                 className={`flex items-center gap-2 px-3 py-1.5 rounded-full text-xs font-medium transition-colors ${showAllItems ? 'bg-blue-600 text-white' : 'bg-gray-200 text-gray-600'}`}
@@ -1524,7 +1699,6 @@ const ResultsView = ({ quote, setView }) => {
         </div>
       </header>
 
-      {/* Alterado para permitir scroll da tabela separadamente e fixar cabeçalho */}
       <main className="flex-1 overflow-hidden p-4 space-y-6 flex flex-col">
         {loading ? (
           <div className="flex justify-center py-10"><Loader2 className="animate-spin" /></div>
@@ -1558,10 +1732,10 @@ const ResultsView = ({ quote, setView }) => {
                             {total.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })}
                         </p>
                         
-                        {/* Botão WhatsApp aparece se tiver ganhado algo (mesmo empate) */}
+                        {/* Botão Pedir (Abre Modal) */}
                         {hasWins && (
                             <button 
-                                onClick={() => handleWhatsApp(supplier)}
+                                onClick={() => handleOpenOrderModal(supplier)} // <--- Alterado para abrir Modal
                                 className="absolute -bottom-3 -right-3 bg-[#25D366] text-white p-2 rounded-full shadow-lg hover:bg-[#128C7E] transition-transform hover:scale-110 flex items-center gap-1 text-xs font-bold pr-3"
                             >
                                 <MessageCircle size={16} /> Pedir
@@ -1573,13 +1747,11 @@ const ResultsView = ({ quote, setView }) => {
                 </div>
             )}
 
-            {/* Tabela de Comparação com Header Fixo */}
-            {/* Adicionado max-h-full e flex-1 para ocupar espaço restante e permitir scroll interno */}
+            {/* Tabela de Comparação */}
             <div className="bg-white rounded-xl shadow-sm border overflow-auto flex-1 relative">
               <table className="w-full text-sm text-left border-collapse">
                 <thead className={`bg-gray-100 text-gray-700 font-bold border-b ${isHeaderSticky ? 'z-40' : ''}`}>
                   <tr>
-                    {/* Header fixo (Sticky) - Z-index AUMENTADO e BG definido */}
                     <th className={`p-4 min-w-[200px] border-r border-b border-gray-200 shadow-sm bg-gray-100 ${isHeaderSticky ? 'sticky left-0 top-0 z-50' : 'sticky left-0'}`}>Produto</th>
                     <th className={`p-4 min-w-[150px] text-center border-r border-b border-gray-200 shadow-sm bg-gray-100 ${isHeaderSticky ? 'sticky top-0 z-40' : ''}`}>Vencedor</th>
                     {responses.filter(r => visibleSuppliers.includes(r.supplierName)).map(r => (
@@ -1592,18 +1764,12 @@ const ResultsView = ({ quote, setView }) => {
                 <tbody className="divide-y">
                   {comparison
                     .filter(row => {
-                        // NOVO: Se showAllItems for true, ignora o filtro de vencedores
                         if (showAllItems) return true;
-
-                        // Se não tem vencedor, esconde
                         if (row.winners.length === 0) return false;
-
-                        // Se tem vencedor, só mostra se algum deles estiver visível
                         return row.winners.some(w => visibleSuppliers.includes(w));
                     })
                     .map((row, i) => (
                     <tr key={i} className="hover:bg-gray-50/50">
-                      {/* Coluna Produto - Sticky Left */}
                       <td className={`p-4 sticky left-0 border-r z-30 ${row.isTie ? 'bg-yellow-50' : 'bg-white'}`}>
                         <div className="flex items-center gap-2">
                             {row.isTie && <AlertTriangle size={16} className="text-yellow-600" />}
@@ -1613,8 +1779,6 @@ const ResultsView = ({ quote, setView }) => {
                             </div>
                         </div>
                       </td>
-
-                      {/* Coluna Vencedor */}
                       <td className="p-4 text-center bg-gray-50/50 border-r border-gray-200">
                           {row.winners.length > 0 ? (
                              row.isTie ? (
@@ -1631,26 +1795,19 @@ const ResultsView = ({ quote, setView }) => {
                              )
                           ) : <span className="text-gray-300">-</span>}
                       </td>
-
-                      {/* Colunas dos Fornecedores */}
                       {row.prices
                         .filter(p => visibleSuppliers.includes(p.supplier))
                         .map((p, idx) => {
                         const isWinner = row.winners.includes(p.supplier);
-                        
-                        // Define cor da célula: Amarelo se empate, Verde se vitória única
                         let cellClass = "";
                         if (isWinner) {
                             cellClass = row.isTie ? "bg-yellow-100/50 text-yellow-800 font-bold" : "bg-green-50 text-green-700 font-bold";
                         } else {
                             cellClass = "text-gray-600";
                         }
-
                         return (
                           <td key={idx} className={`p-4 text-center border-l relative ${cellClass}`}>
-                            <div>
-                               {p.raw === '-' ? '-' : `R$ ${p.raw}`}
-                            </div>
+                            <div>{p.raw === '-' ? '-' : `R$ ${p.raw}`}</div>
                             {p.note && (
                                 <div className="group absolute top-1 right-1">
                                     <MessageSquare size={14} className="text-blue-400 cursor-help" />
@@ -1674,8 +1831,7 @@ const ResultsView = ({ quote, setView }) => {
   );
 };
 
-// --- App Principal ---
-
+// ... (App Principal permanece igual)
 export default function App() {
   const [user, setUser] = useState(null);
   const [view, setView] = useState('home'); 
