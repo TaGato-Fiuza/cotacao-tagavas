@@ -992,7 +992,7 @@ const CreateQuote = ({ userId, setView, editingQuote }) => {
               <div className="w-16 flex-shrink-0">
                  <input 
                   type="text"
-                  inputMode="numeric"
+                  // inputMode="numeric" <--- REMOVIDO PARA PERMITIR TEXTO LIVRE NO CELULAR
                   className="w-full px-2 py-3 rounded-lg border border-gray-200 text-center"
                   placeholder="Qtd"
                   value={item.quantity}
