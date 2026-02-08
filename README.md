@@ -1,145 +1,29 @@
-#🛒 Cotação Tagavas
+# Sistema de Automação de Cotações e Compras (Varejo)
 
-O Cotação Tagavas é uma aplicação web moderna desenvolvida para simplificar e automatizar o processo de cotação de preços entre mercados e fornecedores.
+## 📌 Sobre o Projeto
+Este projeto foi desenvolvido para solucionar um gargalo operacional crítico no **Mercado Tagavas**: a ineficiência no processo de compras e cotação de preços com múltiplos fornecedores. 
 
-O sistema elimina a necessidade de planilhas complexas enviadas por e-mail. O comprador cria uma lista, compartilha um link/código com os fornecedores e o sistema compara os preços automaticamente em tempo real, destacando os vencedores e facilitando o pedido via WhatsApp.
+O objetivo foi transformar um processo manual (sujeito a erros e lento) em um fluxo automatizado e baseado em dados, garantindo a redução de custos operacionais (Opex) e maior agilidade na reposição de estoque.
 
-🚀 Funcionalidades
+## ⚙️ Arquitetura da Solução
+A solução opera como uma aplicação Full-Stack serverless, integrando ferramentas do Google Workspace:
 
-👑 Para o Comprador (Administrador)
+* **Front-end:** AppSheet (Interface mobile para coleta de dados em chão de loja).
+* **Back-end/Automação:** Google Apps Script (JavaScript) para regras de negócio e disparos automáticos.
+* **Banco de Dados:** Google Sheets (Estruturação relacional das tabelas de produtos e fornecedores).
 
-Gestão de Cotações: Criação, edição, clonagem e exclusão de listas de compras.
+## 🚀 Funcionalidades Principais
+1.  **Coleta Padronizada:** Interface móvel para input de preços e produtos, eliminando erros de digitação.
+2.  **Algoritmo de Comparação:** Script que analisa automaticamente as cotações inseridas e destaca o menor preço por item.
+3.  **Histórico de Preços:** Armazenamento de dados para análise de inflação de produtos e negociação com fornecedores.
 
-Importação Inteligente:
+## 🛠️ Tecnologias Utilizadas
+* Google Apps Script (JavaScript)
+* Google AppSheet
+* Lógica de Programação e Estrutura de Dados
 
-Importação de itens via planilha Excel (.xlsx).
+## 💡 Impacto
+A implementação do sistema permitiu a centralização das informações de compras, reduzindo o tempo gasto em cotações e permitindo uma negociação mais assertiva baseada no histórico de preços dos fornecedores.
 
-Leitura de código de barras usando a câmera do dispositivo.
-
-Busca automática de nomes de produtos via API (Cosmos/OpenFoodFacts).
-
-Comparativo em Tempo Real:
-
-Tabela dinâmica que destaca automaticamente o menor preço.
-
-Detecção visual de Empates.
-
-Cálculo de totais por fornecedor (considerando apenas os itens vencidos).
-
-Gestão de Pedidos:
-
-Filtros avançados (Ver apenas vencedores ou todos os itens).
-
-Modal de Pedido: Seleção manual de itens antes de enviar o pedido.
-
-Geração automática de mensagem de pedido para o WhatsApp.
-
-Exportação de relatório em texto (.txt).
-
-Capacidade de invalidar/apagar preços incorretos de fornecedores.
-
-🚚 Para o Fornecedor
-
-Acesso Simplificado: Não requer cadastro complexo (Login via Código da Cotação + Senha simples).
-
-Interface Mobile-First: Design otimizado para preenchimento rápido pelo celular.
-
-Preenchimento Ágil: Foco total nos campos de preço.
-
-Observações: Campo para adicionar notas ou condições especiais por item.
-
-🛠️ Tecnologias Utilizadas
-
-Frontend: React.js
-
-Estilização: Tailwind CSS
-
-Backend & Banco de Dados: Firebase (Authentication & Cloud Firestore)
-
-Ícones: Lucide React
-
-Utilitários:
-
-xlsx: Para manipulação de planilhas Excel.
-
-html5-qrcode: Para leitura de códigos de barras.
-
-📦 Instalação e Configuração
-
-Siga os passos abaixo para rodar o projeto localmente:
-
-1. Pré-requisitos
-
-Certifique-se de ter o Node.js instalado em sua máquina.
-
-2. Clonar o Repositório
-
-git clone [https://github.com/seu-usuario/cotacao-tagavas.git](https://github.com/seu-usuario/cotacao-tagavas.git)
-cd cotacao-tagavas
-
-
-3. Instalar Dependências
-
-npm install
-# ou
-yarn install
-
-
-4. Configurar o Firebase
-
-Crie um projeto no Firebase Console.
-
-Habilite o Authentication (Login Anônimo).
-
-Crie um banco de dados no Cloud Firestore.
-
-No arquivo App.jsx (ou em um arquivo .env), substitua a variável firebaseConfig pelas credenciais do seu projeto:
-
-const firebaseConfig = {
-  apiKey: "SUA_API_KEY",
-  authDomain: "SEU_PROJECT_ID.firebaseapp.com",
-  projectId: "SEU_PROJECT_ID",
-  storageBucket: "SEU_PROJECT_ID.firebasestorage.app",
-  messagingSenderId: "SEU_SENDER_ID",
-  appId: "SEU_APP_ID"
-};
-
-
-5. Regras de Segurança (Firestore)
-
-Para garantir que o app funcione e seja seguro, configure as regras do Firestore para permitir acesso apenas a usuários autenticados (o app faz login anônimo automaticamente):
-
-rules_version = '2';
-service cloud.firestore {
-  match /databases/{database}/documents {
-    match /{document=**} {
-      allow read, write: if request.auth != null;
-    }
-  }
-}
-
-
-6. Rodar o Projeto
-
-npm start
-
-
-O aplicativo abrirá em http://localhost:3000.
-
-📱 Como Usar
-
-Login Admin: Acesse a área do dono (Credenciais configuradas no código: ADMIN_USER_HASH e ADMIN_PASS_HASH).
-
-Criar Cotação: Adicione itens manualmente, por código de barras ou importando um Excel.
-
-Compartilhar: Copie o código da cotação e envie para os fornecedores junto com o link do app.
-
-Acompanhar: Veja na aba "Ver Resultados" os preços chegando em tempo real.
-
-Finalizar: Use o botão de WhatsApp nos cards de totais para enviar o pedido final para cada fornecedor vencedor.
-
-📄 Licença
-
-Este projeto está sob a licença MIT. Sinta-se livre para usar e modificar.
-
-Desenvolvido com 💙 para o Mercado Tagavas.
+---
+*Projeto desenvolvido por Arthur Tagavas Fiuza - Estudante de Engenharia Elétrica (POLI-USP)*
