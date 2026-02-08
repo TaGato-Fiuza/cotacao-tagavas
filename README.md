@@ -1,4 +1,4 @@
-🛒 Cotação Tagavas
+#🛒 Cotação Tagavas
 
 O Cotação Tagavas é uma aplicação web moderna desenvolvida para simplificar e automatizar o processo de cotação de preços entre mercados e fornecedores.
 
