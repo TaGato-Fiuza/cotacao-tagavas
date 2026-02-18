@@ -15,7 +15,7 @@ import {
   query, 
   where, 
   getDocs,
-  deleteField // <--- Importado deleteField
+  deleteField
 } from 'firebase/firestore';
 
 // ⚠️ Se o pacote 'html5-qrcode' não estiver instalado, mantenha comentado para evitar erros de compilação.
@@ -1844,9 +1844,11 @@ const ResultsView = ({ quote, setView }) => {
                                 )}
                             </div>
                             {p.note && (
-                                <div className="absolute top-1 right-1">
+                                <div className="group/note absolute top-1 right-1">
                                     <MessageSquare size={14} className="text-blue-400 cursor-help" />
-                                    {/* Tooltip logic... */}
+                                    <div className="hidden group-hover/note:block absolute bottom-full right-0 w-48 p-2 bg-gray-800 text-white text-xs rounded shadow-lg z-20 mb-1 text-left font-normal">
+                                        Obs: {p.note}
+                                    </div>
                                 </div>
                             )}
                           </td>
