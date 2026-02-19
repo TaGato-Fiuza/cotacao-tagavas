@@ -20,7 +20,7 @@ import {
 
 // ⚠️ Se o pacote 'html5-qrcode' não estiver instalado, mantenha comentado para evitar erros de compilação.
 // O Scanner Híbrido abaixo tratará a ausência da biblioteca mostrando a tela de simulação.
-import { Html5Qrcode } from 'html5-qrcode';
+// import { Html5Qrcode } from 'html5-qrcode';
 
 import { 
   Plus, 
@@ -69,17 +69,31 @@ import {
   Square
 } from 'lucide-react';
 
-// --- Configuração Firebase ---
-const firebaseConfig = typeof __firebase_config !== 'undefined' ? JSON.parse(__firebase_config) : {
-  apiKey: "AIzaSyCDPZvnsEmhTmncnEeShNCy7hAHDMMRQXA",
-  authDomain: "cotacaotagavas.firebaseapp.com",
-  projectId: "cotacaotagavas",
-  storageBucket: "cotacaotagavas.firebasestorage.app",
-  messagingSenderId: "907640755544",
-  appId: "1:907640755544:web:bf6a6663f6e427a944412d"
+// --- Configuração Firebase (Segura via Variáveis de Ambiente) ---
+// O código agora busca as chaves do ambiente (Vercel ou .env local)
+// Se as variáveis não existirem (ex: rodando local sem .env), ele tenta usar o objeto global ou falha graciosamente.
+
+const getEnv = (key) => {
+  // Suporte para Vite (import.meta.env) e Create React App (process.env)
+  if (typeof import.meta !== 'undefined' && import.meta.env) {
+    return import.meta.env[key];
+  }
+  if (typeof process !== 'undefined' && process.env) {
+    return process.env[key] || process.env[key.replace('VITE_', 'REACT_APP_')];
+  }
+  return '';
 };
 
-const COSMOS_API_TOKEN = ""; 
+const firebaseConfig = typeof __firebase_config !== 'undefined' ? JSON.parse(__firebase_config) : {
+  apiKey: getEnv("VITE_FIREBASE_API_KEY"),
+  authDomain: getEnv("VITE_FIREBASE_AUTH_DOMAIN"),
+  projectId: getEnv("VITE_FIREBASE_PROJECT_ID"),
+  storageBucket: getEnv("VITE_FIREBASE_STORAGE_BUCKET"),
+  messagingSenderId: getEnv("VITE_FIREBASE_MESSAGING_SENDER_ID"),
+  appId: getEnv("VITE_FIREBASE_APP_ID")
+};
+
+const COSMOS_API_TOKEN = getEnv("VITE_COSMOS_API_TOKEN") || ""; 
 
 const app = initializeApp(firebaseConfig);
 const auth = getAuth(app);
@@ -88,8 +102,9 @@ const db = getFirestore(app);
 const rawAppId = typeof __app_id !== 'undefined' ? __app_id : 'cotacao-tagavas';
 const appId = rawAppId.replace(/[^a-zA-Z0-9-_]/g, ''); 
 
-const ADMIN_USER_HASH = "TWVyY2FkbyBUYWdhdmFz";
-const ADMIN_PASS_HASH = "VGFnYXZhc0AyMDI4NzQ=";
+// Senhas de Admin também movidas para variáveis de ambiente para segurança
+const ADMIN_USER_HASH = getEnv("VITE_ADMIN_USER_HASH") || "TWVyY2FkbyBUYWdhdmFz"; // Fallback apenas para não quebrar se esquecer a ENV, mas ideal é remover o fallback
+const ADMIN_PASS_HASH = getEnv("VITE_ADMIN_PASS_HASH") || "VGFnYXZhc0AyMDI4NzQ=";
 
 // --- Helpers de Banco de Dados ---
 const getCollectionRef = (collectionName) => {
