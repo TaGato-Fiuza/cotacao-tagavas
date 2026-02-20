@@ -19,8 +19,7 @@ import {
 } from 'firebase/firestore';
 
 // ⚠️ Se o pacote 'html5-qrcode' não estiver instalado, mantenha comentado para evitar erros de compilação.
-// O Scanner Híbrido abaixo tratará a ausência da biblioteca mostrando a tela de simulação.
-// import { Html5Qrcode } from 'html5-qrcode';
+import { Html5Qrcode } from 'html5-qrcode';
 
 import { 
   Plus, 
@@ -70,11 +69,8 @@ import {
 } from 'lucide-react';
 
 // --- Configuração Firebase (Segura via Variáveis de Ambiente) ---
-// O código agora busca as chaves do ambiente (Vercel ou .env local)
-// Se as variáveis não existirem (ex: rodando local sem .env), ele tenta usar o objeto global ou falha graciosamente.
 
 const getEnv = (key) => {
-  // Suporte para Vite (import.meta.env) e Create React App (process.env)
   if (typeof import.meta !== 'undefined' && import.meta.env) {
     return import.meta.env[key];
   }
@@ -102,8 +98,7 @@ const db = getFirestore(app);
 const rawAppId = typeof __app_id !== 'undefined' ? __app_id : 'cotacao-tagavas';
 const appId = rawAppId.replace(/[^a-zA-Z0-9-_]/g, ''); 
 
-// Senhas de Admin também movidas para variáveis de ambiente para segurança
-const ADMIN_USER_HASH = getEnv("VITE_ADMIN_USER_HASH") || "TWVyY2FkbyBUYWdhdmFz"; // Fallback apenas para não quebrar se esquecer a ENV, mas ideal é remover o fallback
+const ADMIN_USER_HASH = getEnv("VITE_ADMIN_USER_HASH") || "TWVyY2FkbyBUYWdhdmFz";
 const ADMIN_PASS_HASH = getEnv("VITE_ADMIN_PASS_HASH") || "VGFnYXZhc0AyMDI4NzQ=";
 
 // --- Helpers de Banco de Dados ---
@@ -173,19 +168,16 @@ const BarcodeScanner = ({ onDetected, onClose }) => {
   useEffect(() => {
     isMounted.current = true;
     
-    // Verifica se Html5Qrcode está disponível globalmente ou via import
-    // Como comentamos o import, ele cairá no mock, a menos que esteja no bundle
     if (typeof window.Html5Qrcode === 'undefined' && typeof Html5Qrcode === 'undefined') {
       setUseMock(true);
       return;
     }
 
-    // Pega a referência correta da classe
     const Html5QrcodeClass = window.Html5Qrcode || Html5Qrcode;
     let html5QrCode;
 
     const startScanner = async () => {
-      await new Promise(r => setTimeout(r, 100)); // Delay para renderização
+      await new Promise(r => setTimeout(r, 100));
       if (!document.getElementById("reader")) return;
 
       try {
@@ -207,7 +199,7 @@ const BarcodeScanner = ({ onDetected, onClose }) => {
                 html5QrCode.stop().then(() => html5QrCode.clear()).catch(console.error);
             }
           },
-          (errorMessage) => { /* ignora erros de frame */ }
+          (errorMessage) => {}
         );
       } catch (err) {
         if (isMounted.current) {
@@ -259,7 +251,6 @@ const BarcodeScanner = ({ onDetected, onClose }) => {
   );
 };
 
-// --- Helper para gerar IDs ---
 const generateId = () => Math.random().toString(36).substring(2, 15);
 
 // --- Telas do Aplicativo ---
@@ -396,7 +387,6 @@ const SupplierLogin = ({ setView, setSupplierAuth }) => {
         return;
       }
 
-      // Verifica apenas na coleção de respostas
       const q = query(
         getCollectionRef('responses'),
         where('quoteId', '==', code.toUpperCase()),
@@ -541,7 +531,7 @@ const AdminDashboard = ({ userId, setView, setCurrentQuote }) => {
           await setDoc(docRef, {
             title: `${quote.title} (Cópia)`,
             ownerId: userId,
-            items: quote.items.map(i => ({...i, id: i.id || generateId()})), 
+            items: (quote.items || []).map(i => ({...i, id: i.id || generateId()})), 
             status: 'open',
             createdAt: serverTimestamp()
           });
@@ -555,7 +545,6 @@ const AdminDashboard = ({ userId, setView, setCurrentQuote }) => {
 
   const handleToggleStatus = async (quote) => {
       const newStatus = quote.status === 'open' ? 'closed' : 'open';
-      const action = newStatus === 'open' ? 'reabrir' : 'encerrar';
       
       setProcessing(quote.id); 
       
@@ -684,7 +673,7 @@ const AdminDashboard = ({ userId, setView, setCurrentQuote }) => {
                         {quote.status === 'open' ? 'Aberta' : 'Fechada'}
                     </span>
                     <span className="text-sm text-gray-500">
-                    • {new Date(quote.createdAt?.seconds * 1000).toLocaleDateString()} • {quote.items?.length || 0} itens
+                    • {new Date(quote.createdAt?.seconds * 1000).toLocaleDateString()} • {(quote.items || []).length} itens
                     </span>
                 </div>
               </div>
@@ -749,7 +738,6 @@ const CreateQuote = ({ userId, setView, editingQuote }) => {
   const [title, setTitle] = useState(editingQuote ? editingQuote.title || '' : '');
   const [items, setItems] = useState(() => {
      if (editingQuote) {
-        // Garante que items seja sempre um array para evitar crash no map
         const safeItems = Array.isArray(editingQuote.items) ? editingQuote.items : [];
         return safeItems.map(i => ({
             ...i, 
@@ -1007,7 +995,6 @@ const CreateQuote = ({ userId, setView, editingQuote }) => {
               <div className="w-16 flex-shrink-0">
                  <input 
                   type="text"
-                  // inputMode="numeric" <--- REMOVIDO PARA PERMITIR TEXTO LIVRE NO CELULAR
                   className="w-full px-2 py-3 rounded-lg border border-gray-200 text-center"
                   placeholder="Qtd"
                   value={item.quantity}
@@ -1189,7 +1176,7 @@ const SupplierView = ({ supplierAuth, setView }) => {
 
       <main className="max-w-3xl mx-auto p-4 space-y-6">
         <div className="space-y-3">
-          {quote.items.map((item, index) => (
+          {(quote?.items || []).map((item, index) => (
             <Card key={item.id || index} className="p-4">
               <div className="flex items-center justify-between gap-4 mb-2">
                 <div className="flex-1">
@@ -1257,13 +1244,13 @@ const ResultsView = ({ quote, setView }) => {
   const [showAllItems, setShowAllItems] = useState(false); 
   const [isHeaderSticky, setIsHeaderSticky] = useState(true); 
   const [showTotals, setShowTotals] = useState(true); 
-  const [searchTerm, setSearchTerm] = useState(""); // <--- NOVO: Estado de Busca
+  const [searchTerm, setSearchTerm] = useState("");
 
   // Novos estados para o Modal de Pedido
   const [orderModalOpen, setOrderModalOpen] = useState(false);
   const [activeOrderSupplier, setActiveOrderSupplier] = useState(null);
   const [activeOrderItems, setActiveOrderItems] = useState([]);
-  const [selectedOrderItems, setSelectedOrderItems] = useState(new Set()); // IDs dos itens selecionados para pedido
+  const [selectedOrderItems, setSelectedOrderItems] = useState(new Set()); 
 
   useEffect(() => {
     if(!quote) return;
@@ -1280,25 +1267,21 @@ const ResultsView = ({ quote, setView }) => {
     return () => unsub();
   }, [quote]); 
 
-  // Novo: Atualiza filtros de forma segura quando chegam novas respostas
   useEffect(() => {
       if (responses.length > 0) {
           const currentNames = responses.map(r => r.supplierName);
           setVisibleSuppliers(prev => {
-              // Mantém os já selecionados e adiciona novos que aparecerem
               const unique = new Set([...prev, ...currentNames]);
               return Array.from(unique);
           });
       }
   }, [responses]);
 
-  // Se não houver cotação carregada, mostra loading ou volta
   if (!quote) return <div className="flex h-screen items-center justify-center"><Loader2 className="animate-spin text-blue-600" /></div>;
 
   const comparison = useMemo(() => {
     if (!quote.items || !Array.isArray(quote.items)) return [];
     
-    // Filtra itens inválidos e APLICA O FILTRO DE BUSCA AQUI
     const validItems = quote.items.filter(i => {
         const matchesSearch = !searchTerm || i.name.toLowerCase().includes(searchTerm.toLowerCase());
         return i && i.name && matchesSearch;
@@ -1333,12 +1316,11 @@ const ResultsView = ({ quote, setView }) => {
             minPrice = val;
             winner = r.supplierName;
           }
-          return { supplier: r.supplierName, price: val, raw: rawString, note, responseId: r.id }; // Incluindo responseId
+          return { supplier: r.supplierName, price: val, raw: rawString, note, responseId: r.id };
         }
         return { supplier: r.supplierName, price: null, raw: rawString, note, responseId: r.id };
       });
 
-      // Recalcular vencedores com base no menor preço encontrado
       let winners = [];
       if (minPrice !== Infinity) {
           winners = priceData
@@ -1354,7 +1336,7 @@ const ResultsView = ({ quote, setView }) => {
         minPrice: minPrice === Infinity ? null : minPrice
       };
     });
-  }, [quote, responses, searchTerm]); // Adicionei searchTerm na dependência
+  }, [quote, responses, searchTerm]); 
 
   const basketTotals = useMemo(() => {
     const totals = {};
@@ -1381,7 +1363,6 @@ const ResultsView = ({ quote, setView }) => {
     return { totals, winnersCount };
   }, [comparison, responses]);
 
-  // Função para abrir o Modal de Pedido
   const handleOpenOrderModal = (supplierName) => {
       const itemsForSupplier = [];
       
@@ -1399,7 +1380,6 @@ const ResultsView = ({ quote, setView }) => {
              return { supplier: r.supplierName, price: isNaN(val) ? null : val };
           });
 
-          // Achar menor preço
           priceData.forEach(p => {
               if (p.price !== null && p.price < minPrice) minPrice = p.price;
           });
@@ -1439,9 +1419,9 @@ const ResultsView = ({ quote, setView }) => {
 
   const toggleSelectAllOrderItems = () => {
       if (selectedOrderItems.size === activeOrderItems.length) {
-          setSelectedOrderItems(new Set()); // Deselecionar tudo
+          setSelectedOrderItems(new Set()); 
       } else {
-          setSelectedOrderItems(new Set(activeOrderItems.map(i => i.id))); // Selecionar tudo
+          setSelectedOrderItems(new Set(activeOrderItems.map(i => i.id)));
       }
   };
 
@@ -1468,23 +1448,16 @@ const ResultsView = ({ quote, setView }) => {
       setOrderModalOpen(false);
   };
 
-  // Função para invalidar/apagar preço
   const handleInvalidatePrice = async (responseId, itemId, price, supplierName, itemIndex) => {
       if(!window.confirm(`Tem certeza que deseja apagar o preço R$ ${price} de ${supplierName}? Esta ação não pode ser desfeita facilmente.`)) return;
       
       try {
-          // Tentamos deletar usando tanto o ID (novo sistema) quanto o índice (sistema legado) para garantir
           const docRef = getDocRef('responses', responseId);
-          
-          // Prepara objeto de atualização
           const updates = {};
           
-          // Se tiver ID, deleta pelo ID
           if (itemId) {
               updates[`prices.${itemId}`] = deleteField();
           }
-          
-          // Tenta deletar pelo índice também por segurança (caso seja legado)
           if (itemIndex !== undefined) {
               updates[`prices.${itemIndex}`] = deleteField();
           }
@@ -1625,7 +1598,7 @@ const ResultsView = ({ quote, setView }) => {
 
        <header className="bg-white border-b sticky top-0 z-10 shadow-sm print:hidden flex-shrink-0">
         <div className="w-full px-4 py-4 flex flex-col gap-4">
-           <div className="flex flex-col sm:flex-row items-center justify-between gap-4"> {/* Ajustado para layout responsivo */}
+           <div className="flex flex-col sm:flex-row items-center justify-between gap-4">
                 <div className="flex items-center gap-3 w-full sm:w-auto">
                     <button onClick={() => setView('admin_dashboard')} className="p-2 -ml-2 text-gray-600 hover:bg-gray-100 rounded-full">
                     <ArrowLeft size={20} />
@@ -1636,7 +1609,6 @@ const ResultsView = ({ quote, setView }) => {
                     </div>
                 </div>
 
-                {/* NOVO: Barra de Busca Centralizada/Direita */}
                 <div className="relative w-full sm:max-w-md">
                     <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400" size={18} />
                     <input 
@@ -1649,11 +1621,9 @@ const ResultsView = ({ quote, setView }) => {
                 </div>
 
                 <div className="flex gap-2 w-full sm:w-auto justify-end">
-                    {/* Botão de Toggle Cards */}
                     <Button variant="ghost" className="text-sm px-3 hidden md:flex" onClick={() => setShowTotals(!showTotals)} title={showTotals ? "Ocultar Cards de Totais" : "Ver Cards de Totais"}>
                         {showTotals ? <ChevronUp size={18} /> : <ChevronDown size={18} />}
                     </Button>
-
                     <Button variant="ghost" className="text-sm px-3" onClick={() => setShowCredentials(!showCredentials)} title="Ver Senhas dos Fornecedores">
                         {showCredentials ? <EyeOff size={18} /> : <Eye size={18} />}
                     </Button>
@@ -1666,7 +1636,6 @@ const ResultsView = ({ quote, setView }) => {
                 </div>
            </div>
            
-           {/* ... (Show Credentials logic remains same) */}
            {showCredentials && (
              <div className="bg-yellow-50 border border-yellow-200 rounded-lg p-3 animate-in slide-in-from-top-2">
                <h3 className="text-xs font-bold text-yellow-800 uppercase mb-2 flex items-center gap-2">
@@ -1683,13 +1652,11 @@ const ResultsView = ({ quote, setView }) => {
              </div>
            )}
 
-           {/* Filtros */}
            {showFilters && (
                <div className="flex flex-col gap-3 bg-gray-50 p-3 rounded-lg border border-gray-200 animate-in slide-in-from-top-2">
                    <div className="flex items-center justify-between border-b border-gray-200 pb-2">
                         <span className="text-xs font-bold text-gray-500">Exibição:</span>
                         <div className="flex gap-2">
-                            {/* Toggle Cards (Mobile) */}
                             <button 
                                 onClick={() => setShowTotals(!showTotals)}
                                 className={`flex md:hidden items-center gap-2 px-3 py-1.5 rounded-full text-xs font-medium transition-colors ${showTotals ? 'bg-blue-100 text-blue-700' : 'bg-gray-200 text-gray-600'}`}
@@ -1744,7 +1711,6 @@ const ResultsView = ({ quote, setView }) => {
           </div>
         ) : (
           <div className="space-y-4 flex flex-col h-full">
-             {/* Cards de Totais (Collapsible) */}
             {showTotals && (
                 <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4 flex-shrink-0 animate-in fade-in slide-in-from-top-2">
                 {Object.entries(basketTotals.totals)
@@ -1766,10 +1732,9 @@ const ResultsView = ({ quote, setView }) => {
                             {total.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })}
                         </p>
                         
-                        {/* Botão Pedir (Abre Modal) */}
                         {hasWins && (
                             <button 
-                                onClick={() => handleOpenOrderModal(supplier)} // <--- Alterado para abrir Modal
+                                onClick={() => handleOpenOrderModal(supplier)} 
                                 className="absolute -bottom-3 -right-3 bg-[#25D366] text-white p-2 rounded-full shadow-lg hover:bg-[#128C7E] transition-transform hover:scale-110 flex items-center gap-1 text-xs font-bold pr-3"
                             >
                                 <MessageCircle size={16} /> Pedir
@@ -1781,7 +1746,6 @@ const ResultsView = ({ quote, setView }) => {
                 </div>
             )}
 
-            {/* Tabela de Comparação */}
             <div className="bg-white rounded-xl shadow-sm border overflow-auto flex-1 relative">
               <table className="w-full text-sm text-left border-collapse">
                 <thead className={`bg-gray-100 text-gray-700 font-bold border-b ${isHeaderSticky ? 'z-40' : ''}`}>
@@ -1843,12 +1807,10 @@ const ResultsView = ({ quote, setView }) => {
                           <td key={idx} className={`p-4 text-center border-l relative ${cellClass} group`}>
                             <div className="relative">
                                 {p.raw === '-' ? '-' : `R$ ${p.raw}`}
-                                {/* Ícone de Excluir Preço */}
                                 {p.price !== null && (
                                     <button 
                                         onClick={(e) => {
                                             e.stopPropagation();
-                                            // p.responseId vem do priceData map acima
                                             handleInvalidatePrice(p.responseId, row.item.id, p.raw, p.supplier, i);
                                         }}
                                         className="absolute -right-6 top-1/2 -translate-y-1/2 opacity-0 group-hover:opacity-100 transition-opacity p-1 text-gray-300 hover:text-red-500 rounded-full"
@@ -1858,6 +1820,7 @@ const ResultsView = ({ quote, setView }) => {
                                     </button>
                                 )}
                             </div>
+                            {/* A lógica do Tooltip restaurada aqui */}
                             {p.note && (
                                 <div className="group/note absolute top-1 right-1">
                                     <MessageSquare size={14} className="text-blue-400 cursor-help" />
@@ -1881,7 +1844,6 @@ const ResultsView = ({ quote, setView }) => {
   );
 };
 
-// ... (App Principal permanece igual)
 export default function App() {
   const [user, setUser] = useState(null);
   const [view, setView] = useState('home'); 
