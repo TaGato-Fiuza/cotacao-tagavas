@@ -69,26 +69,17 @@ import {
 } from 'lucide-react';
 
 // --- Configuração Firebase (Segura via Variáveis de Ambiente) ---
-// O código agora busca as chaves do ambiente (Vercel ou .env local)
-// Removido import.meta para evitar tela branca em celulares com navegadores antigos.
-
-const getEnv = (key) => {
-  if (typeof process !== 'undefined' && process.env) {
-    return process.env[key] || process.env[key.replace('VITE_', 'REACT_APP_')];
-  }
-  return '';
-};
 
 const firebaseConfig = typeof __firebase_config !== 'undefined' ? JSON.parse(__firebase_config) : {
-  apiKey: getEnv("VITE_FIREBASE_API_KEY"),
-  authDomain: getEnv("VITE_FIREBASE_AUTH_DOMAIN"),
-  projectId: getEnv("VITE_FIREBASE_PROJECT_ID"),
-  storageBucket: getEnv("VITE_FIREBASE_STORAGE_BUCKET"),
-  messagingSenderId: getEnv("VITE_FIREBASE_MESSAGING_SENDER_ID"),
-  appId: getEnv("VITE_FIREBASE_APP_ID")
+  apiKey: (typeof process !== 'undefined' && process?.env?.REACT_APP_FIREBASE_API_KEY) || (typeof import.meta !== 'undefined' && import.meta?.env?.VITE_FIREBASE_API_KEY) || "AIzaSyCDPZvnsEmhTmncnEeShNCy7hAHDMMRQXA",
+  authDomain: (typeof process !== 'undefined' && process?.env?.REACT_APP_FIREBASE_AUTH_DOMAIN) || (typeof import.meta !== 'undefined' && import.meta?.env?.VITE_FIREBASE_AUTH_DOMAIN) || "cotacaotagavas.firebaseapp.com",
+  projectId: (typeof process !== 'undefined' && process?.env?.REACT_APP_FIREBASE_PROJECT_ID) || (typeof import.meta !== 'undefined' && import.meta?.env?.VITE_FIREBASE_PROJECT_ID) || "cotacaotagavas",
+  storageBucket: (typeof process !== 'undefined' && process?.env?.REACT_APP_FIREBASE_STORAGE_BUCKET) || (typeof import.meta !== 'undefined' && import.meta?.env?.VITE_FIREBASE_STORAGE_BUCKET) || "cotacaotagavas.firebasestorage.app",
+  messagingSenderId: (typeof process !== 'undefined' && process?.env?.REACT_APP_FIREBASE_MESSAGING_SENDER_ID) || (typeof import.meta !== 'undefined' && import.meta?.env?.VITE_FIREBASE_MESSAGING_SENDER_ID) || "907640755544",
+  appId: (typeof process !== 'undefined' && process?.env?.REACT_APP_FIREBASE_APP_ID) || (typeof import.meta !== 'undefined' && import.meta?.env?.VITE_FIREBASE_APP_ID) || "1:907640755544:web:bf6a6663f6e427a944412d"
 };
 
-const COSMOS_API_TOKEN = getEnv("VITE_COSMOS_API_TOKEN") || ""; 
+const COSMOS_API_TOKEN = (typeof process !== 'undefined' && process?.env?.REACT_APP_COSMOS_API_TOKEN) || (typeof import.meta !== 'undefined' && import.meta?.env?.VITE_COSMOS_API_TOKEN) || ""; 
 
 const app = initializeApp(firebaseConfig);
 const auth = getAuth(app);
@@ -98,8 +89,8 @@ const rawAppId = typeof __app_id !== 'undefined' ? __app_id : 'cotacao-tagavas';
 const appId = rawAppId.replace(/[^a-zA-Z0-9-_]/g, ''); 
 
 // Senhas de Admin agora são puxadas exclusivamente do Vercel para máxima segurança no GitHub
-const ADMIN_USER_HASH = getEnv("VITE_ADMIN_USER_HASH") || "TWVyY2FkbyBUYWdhdmFz"; // Padrão caso não configure no Vercel
-const ADMIN_PASS_HASH = getEnv("VITE_ADMIN_PASS_HASH") || "VGFnYXZhc0AyMDI4NzQ="; // Padrão caso não configure no Vercel
+const ADMIN_USER_HASH = (typeof process !== 'undefined' && process?.env?.REACT_APP_ADMIN_USER_HASH) || (typeof import.meta !== 'undefined' && import.meta?.env?.VITE_ADMIN_USER_HASH) || "TWVyY2FkbyBUYWdhdmFz"; 
+const ADMIN_PASS_HASH = (typeof process !== 'undefined' && process?.env?.REACT_APP_ADMIN_PASS_HASH) || (typeof import.meta !== 'undefined' && import.meta?.env?.VITE_ADMIN_PASS_HASH) || "VGFnYXZhc0AyMDI4NzQ="; 
 
 // --- Helpers de Banco de Dados ---
 const getCollectionRef = (collectionName) => {
@@ -1466,7 +1457,6 @@ const ResultsView = ({ quote, setView }) => {
       }
   };
 
-  // Função para apagar todas as respostas de um fornecedor
   const handleDeleteSupplier = async (responseId, supplierName) => {
       if(!window.confirm(`Tem a certeza que deseja APAGAR COMPLETAMENTE as respostas de ${supplierName}? Esta ação removerá este fornecedor da cotação e não pode ser desfeita.`)) return;
       
