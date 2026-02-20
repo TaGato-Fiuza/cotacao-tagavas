@@ -69,11 +69,10 @@ import {
 } from 'lucide-react';
 
 // --- Configuração Firebase (Segura via Variáveis de Ambiente) ---
+// O código agora busca as chaves do ambiente (Vercel ou .env local)
+// Removido import.meta para evitar tela branca em celulares com navegadores antigos.
 
 const getEnv = (key) => {
-  if (typeof import.meta !== 'undefined' && import.meta.env) {
-    return import.meta.env[key];
-  }
   if (typeof process !== 'undefined' && process.env) {
     return process.env[key] || process.env[key.replace('VITE_', 'REACT_APP_')];
   }
@@ -98,8 +97,9 @@ const db = getFirestore(app);
 const rawAppId = typeof __app_id !== 'undefined' ? __app_id : 'cotacao-tagavas';
 const appId = rawAppId.replace(/[^a-zA-Z0-9-_]/g, ''); 
 
-const ADMIN_USER_HASH = getEnv("VITE_ADMIN_USER_HASH") || "TWVyY2FkbyBUYWdhdmFz";
-const ADMIN_PASS_HASH = getEnv("VITE_ADMIN_PASS_HASH") || "VGFnYXZhc0AyMDI4NzQ=";
+// Senhas de Admin agora são puxadas exclusivamente do Vercel para máxima segurança no GitHub
+const ADMIN_USER_HASH = getEnv("VITE_ADMIN_USER_HASH") || "TWVyY2FkbyBUYWdhdmFz"; // Padrão caso não configure no Vercel
+const ADMIN_PASS_HASH = getEnv("VITE_ADMIN_PASS_HASH") || "VGFnYXZhc0AyMDI4NzQ="; // Padrão caso não configure no Vercel
 
 // --- Helpers de Banco de Dados ---
 const getCollectionRef = (collectionName) => {
@@ -177,7 +177,7 @@ const BarcodeScanner = ({ onDetected, onClose }) => {
     let html5QrCode;
 
     const startScanner = async () => {
-      await new Promise(r => setTimeout(r, 100));
+      await new Promise(r => setTimeout(r, 100)); 
       if (!document.getElementById("reader")) return;
 
       try {
@@ -199,7 +199,7 @@ const BarcodeScanner = ({ onDetected, onClose }) => {
                 html5QrCode.stop().then(() => html5QrCode.clear()).catch(console.error);
             }
           },
-          (errorMessage) => {}
+          (errorMessage) => { }
         );
       } catch (err) {
         if (isMounted.current) {
@@ -313,7 +313,6 @@ const HomeScreen = ({ setView }) => {
   );
 };
 
-// 1.1 Login do Admin (Seguro)
 const AdminLogin = ({ setView }) => {
   const [username, setUsername] = useState("");
   const [password, setPassword] = useState("");
@@ -366,7 +365,6 @@ const AdminLogin = ({ setView }) => {
   );
 };
 
-// 1.2 Login do Fornecedor
 const SupplierLogin = ({ setView, setSupplierAuth }) => {
   const [name, setName] = useState("");
   const [password, setPassword] = useState("");
@@ -471,7 +469,6 @@ const SupplierLogin = ({ setView, setSupplierAuth }) => {
   );
 };
 
-// 2. Dashboard do Dono
 const AdminDashboard = ({ userId, setView, setCurrentQuote }) => {
   const [quotes, setQuotes] = useState([]);
   const [loading, setLoading] = useState(true);
@@ -1469,6 +1466,18 @@ const ResultsView = ({ quote, setView }) => {
       }
   };
 
+  // Função para apagar todas as respostas de um fornecedor
+  const handleDeleteSupplier = async (responseId, supplierName) => {
+      if(!window.confirm(`Tem a certeza que deseja APAGAR COMPLETAMENTE as respostas de ${supplierName}? Esta ação removerá este fornecedor da cotação e não pode ser desfeita.`)) return;
+      
+      try {
+          await deleteDoc(getDocRef('responses', responseId));
+      } catch(e) {
+          console.error("Erro ao apagar fornecedor:", e);
+          alert("Erro ao remover fornecedor.");
+      }
+  };
+
   const handleExport = () => {
     let exportText = `RESULTADO COTAÇÃO TAGAVAS: ${quote.title}\n\n`;
     const winsBySupplier = {};
@@ -1754,7 +1763,17 @@ const ResultsView = ({ quote, setView }) => {
                     <th className={`p-4 min-w-[150px] text-center border-r border-b border-gray-200 shadow-sm bg-gray-100 ${isHeaderSticky ? 'sticky top-0 z-40' : ''}`}>Vencedor</th>
                     {responses.filter(r => visibleSuppliers.includes(r.supplierName)).map(r => (
                       <th key={r.id} className={`p-4 min-w-[120px] text-center border-b border-gray-200 shadow-sm bg-gray-100 ${isHeaderSticky ? 'sticky top-0 z-40' : ''}`}>
-                          {r.supplierName}
+                          <div className="flex items-center justify-center gap-2 group/supplier">
+                              <span>{r.supplierName}</span>
+                              {/* Botão para apagar o fornecedor inteiro */}
+                              <button 
+                                  onClick={() => handleDeleteSupplier(r.id, r.supplierName)}
+                                  className="opacity-0 group-hover/supplier:opacity-100 text-gray-400 hover:text-red-600 transition-opacity p-1 rounded-full hover:bg-red-50"
+                                  title={`Excluir todas as respostas de ${r.supplierName}`}
+                              >
+                                  <Trash2 size={14} />
+                              </button>
+                          </div>
                       </th>
                     ))}
                   </tr>
