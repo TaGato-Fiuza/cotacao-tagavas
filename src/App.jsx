@@ -1851,6 +1851,21 @@ export default function App() {
   const [currentQuote, setCurrentQuote] = useState(null);
   const [supplierAuth, setSupplierAuth] = useState(null);
 
+  // --- FIX GOOGLE TRANSLATE BUG ---
+  useEffect(() => {
+    // Força a página a não ser traduzida para evitar quebra do React (Tela Branca em celulares)
+    document.documentElement.lang = 'pt-BR';
+    document.documentElement.setAttribute('translate', 'no');
+    
+    // Adiciona a meta tag programaticamente se ela não existir no index.html
+    if (!document.querySelector('meta[name="google"]')) {
+      const meta = document.createElement('meta');
+      meta.name = 'google';
+      meta.content = 'notranslate';
+      document.head.appendChild(meta);
+    }
+  }, []);
+
   useEffect(() => {
     const initAuth = async () => {
       try {
@@ -1895,7 +1910,8 @@ export default function App() {
   };
 
   return (
-    <div className="font-sans text-gray-900 bg-gray-100 min-h-screen">
+    // Adicionado classe "notranslate" na div principal
+    <div className="font-sans text-gray-900 bg-gray-100 min-h-screen notranslate" translate="no">
       {renderView()}
     </div>
   );
