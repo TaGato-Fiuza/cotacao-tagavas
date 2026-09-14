@@ -63,9 +63,12 @@ import {
   PinOff,
   ChevronUp,
   ChevronDown,
-  Search, 
+  Search,
   CheckSquare,
-  Square
+  Square,
+  Calendar,
+  Clock,
+  Home
 } from 'lucide-react';
 
 // --- Configuração Firebase (Segura via Variáveis de Ambiente) ---
@@ -578,13 +581,22 @@ const AdminDashboard = ({ userId, setView, setCurrentQuote }) => {
             <h1 className="font-bold text-lg text-gray-900">Minhas Cotações</h1>
           </div>
           
-          <button 
-            onClick={handleRefresh}
-            className="p-2 text-gray-500 hover:text-blue-600 rounded-full transition-colors"
-            title="Recarregar Dados"
-          >
-            <RefreshCw size={20} />
-          </button>
+          <div className="flex items-center gap-1">
+            <button
+              onClick={() => setView('agenda_alugueis')}
+              className="p-2 text-gray-500 hover:text-blue-600 rounded-full transition-colors"
+              title="Agenda de Aluguéis"
+            >
+              <Calendar size={20} />
+            </button>
+            <button
+              onClick={handleRefresh}
+              className="p-2 text-gray-500 hover:text-blue-600 rounded-full transition-colors"
+              title="Recarregar Dados"
+            >
+              <RefreshCw size={20} />
+            </button>
+          </div>
         </div>
         <div className="flex border-t border-gray-100">
             <button 
@@ -1853,6 +1865,256 @@ const ResultsView = ({ quote, setView }) => {
   );
 };
 
+// 6. Agenda de Aluguéis
+const getMonthKey = (date = new Date()) => `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}`;
+
+const getDueDateForMonth = (dueDay, monthKey) => {
+  const [year, month] = monthKey.split('-').map(Number);
+  const lastDayOfMonth = new Date(year, month, 0).getDate();
+  const day = Math.min(dueDay, lastDayOfMonth);
+  return new Date(year, month - 1, day);
+};
+
+const getRentalStatus = (rental, monthKey) => {
+  const payment = rental.payments?.[monthKey];
+  if (payment?.paid) return 'pago';
+  const dueDate = getDueDateForMonth(rental.dueDay, monthKey);
+  const today = new Date();
+  today.setHours(0, 0, 0, 0);
+  return dueDate < today ? 'atrasado' : 'a_vencer';
+};
+
+const STATUS_CONFIG = {
+  pago: { label: 'Pago', badge: 'bg-green-100 text-green-700', icon: CheckCircle, iconColor: 'text-green-600' },
+  a_vencer: { label: 'A Vencer', badge: 'bg-yellow-100 text-yellow-700', icon: Clock, iconColor: 'text-yellow-600' },
+  atrasado: { label: 'Atrasado', badge: 'bg-red-100 text-red-700', icon: AlertCircle, iconColor: 'text-red-600' },
+};
+
+const RentalForm = ({ initialData, onSave, onCancel, isSubmitting }) => {
+  const [houseName, setHouseName] = useState(initialData?.houseName || '');
+  const [tenantName, setTenantName] = useState(initialData?.tenantName || '');
+  const [amount, setAmount] = useState(initialData?.amount ? String(initialData.amount) : '');
+  const [dueDay, setDueDay] = useState(initialData?.dueDay ? String(initialData.dueDay) : '');
+  const [notes, setNotes] = useState(initialData?.notes || '');
+
+  const handleSubmit = () => {
+    const dueDayNum = parseInt(dueDay, 10);
+    if (!houseName.trim()) return alert("Informe o nome/identificação da casa.");
+    if (!dueDayNum || dueDayNum < 1 || dueDayNum > 31) return alert("Informe um dia de vencimento válido (1 a 31).");
+
+    onSave({
+      houseName: houseName.trim(),
+      tenantName: tenantName.trim(),
+      amount: parseFloat(String(amount).replace(',', '.')) || 0,
+      dueDay: dueDayNum,
+      notes: notes.trim(),
+    });
+  };
+
+  return (
+    <div className="fixed inset-0 z-[60] bg-black/50 flex items-center justify-center p-4 backdrop-blur-sm">
+      <Card className="w-full max-w-md p-6 space-y-4">
+        <h3 className="text-lg font-bold text-gray-900">{initialData ? 'Editar Casa' : 'Nova Casa'}</h3>
+        <Input label="Casa / Imóvel" placeholder="Ex: Casa da Rua A, nº 12" value={houseName} onChange={e => setHouseName(e.target.value)} />
+        <Input label="Inquilino (opcional)" placeholder="Ex: João Silva" value={tenantName} onChange={e => setTenantName(e.target.value)} />
+        <div className="flex gap-3">
+          <Input label="Valor do Aluguel (R$)" type="text" inputMode="decimal" placeholder="Ex: 1200" value={amount} onChange={e => setAmount(e.target.value)} className="flex-1" />
+          <Input label="Dia do Vencimento" type="text" inputMode="numeric" placeholder="Ex: 10" value={dueDay} onChange={e => setDueDay(e.target.value.replace(/\D/g, ''))} className="w-32" />
+        </div>
+        <Input label="Observações (opcional)" placeholder="Ex: PIX preferencial" value={notes} onChange={e => setNotes(e.target.value)} />
+        <div className="flex gap-3 pt-2">
+          <Button variant="secondary" className="flex-1" onClick={onCancel}>Cancelar</Button>
+          <Button className="flex-1" onClick={handleSubmit} disabled={isSubmitting}>
+            {isSubmitting ? <Loader2 className="animate-spin" /> : 'Salvar'}
+          </Button>
+        </div>
+      </Card>
+    </div>
+  );
+};
+
+const AgendaAlugueis = ({ setView }) => {
+  const [rentals, setRentals] = useState([]);
+  const [loading, setLoading] = useState(true);
+  const [showForm, setShowForm] = useState(false);
+  const [editingRental, setEditingRental] = useState(null);
+  const [isSubmitting, setIsSubmitting] = useState(false);
+  const [processing, setProcessing] = useState(null);
+
+  const monthKey = getMonthKey();
+  const monthLabel = new Date().toLocaleDateString('pt-BR', { month: 'long', year: 'numeric' });
+
+  useEffect(() => {
+    const unsub = onSnapshot(getCollectionRef('rentals'), (snapshot) => {
+      const all = snapshot.docs.map(d => ({ id: d.id, ...d.data() }));
+      setRentals(all);
+      setLoading(false);
+    }, (error) => {
+      console.error("Erro no snapshot:", error);
+      setLoading(false);
+    });
+    return () => unsub();
+  }, []);
+
+  const sortedRentals = useMemo(() => {
+    const priority = { atrasado: 0, a_vencer: 1, pago: 2 };
+    return [...rentals].sort((a, b) => {
+      const statusA = getRentalStatus(a, monthKey);
+      const statusB = getRentalStatus(b, monthKey);
+      if (priority[statusA] !== priority[statusB]) return priority[statusA] - priority[statusB];
+      return (a.dueDay || 0) - (b.dueDay || 0);
+    });
+  }, [rentals, monthKey]);
+
+  const handleSaveRental = async (data) => {
+    setIsSubmitting(true);
+    try {
+      if (editingRental) {
+        await setDoc(getDocRef('rentals', editingRental.id), data, { merge: true });
+      } else {
+        await addDoc(getCollectionRef('rentals'), { ...data, payments: {}, createdAt: serverTimestamp() });
+      }
+      setShowForm(false);
+      setEditingRental(null);
+    } catch (e) {
+      console.error(e);
+      alert("Erro ao salvar a casa.");
+    } finally {
+      setIsSubmitting(false);
+    }
+  };
+
+  const handleTogglePaid = async (rental) => {
+    const currentlyPaid = rental.payments?.[monthKey]?.paid;
+    setProcessing(rental.id);
+    try {
+      await updateDoc(getDocRef('rentals', rental.id), {
+        [`payments.${monthKey}`]: currentlyPaid
+          ? { paid: false }
+          : { paid: true, paidAt: serverTimestamp() },
+      });
+    } catch (e) {
+      console.error(e);
+      alert("Erro ao atualizar pagamento.");
+    } finally {
+      setProcessing(null);
+    }
+  };
+
+  const handleDelete = async (rental) => {
+    if (!window.confirm(`Tem certeza que deseja excluir "${rental.houseName}"? Isso apaga todo o histórico de pagamentos.`)) return;
+    setProcessing(rental.id);
+    try {
+      await deleteDoc(getDocRef('rentals', rental.id));
+    } catch (e) {
+      console.error(e);
+      alert("Erro ao excluir.");
+    } finally {
+      setProcessing(null);
+    }
+  };
+
+  return (
+    <div className="min-h-screen bg-gray-50 pb-24">
+      <header className="bg-white border-b sticky top-0 z-10">
+        <div className="max-w-3xl mx-auto px-4 py-4 flex items-center justify-between">
+          <div className="flex items-center gap-2">
+            <button onClick={() => setView('admin_dashboard')} className="p-2 -ml-2 text-gray-600 hover:bg-gray-100 rounded-full">
+              <ArrowLeft size={20} />
+            </button>
+            <div>
+              <h1 className="font-bold text-lg text-gray-900">Agenda de Aluguéis</h1>
+              <p className="text-xs text-gray-500 capitalize">{monthLabel}</p>
+            </div>
+          </div>
+        </div>
+      </header>
+
+      <main className="max-w-3xl mx-auto p-4 space-y-4">
+        {loading ? (
+          <div className="flex justify-center py-10"><Loader2 className="animate-spin text-blue-600" /></div>
+        ) : sortedRentals.length === 0 ? (
+          <div className="text-center py-20 text-gray-400">
+            <Home size={48} className="mx-auto mb-4 opacity-20" />
+            <p>Nenhuma casa cadastrada ainda.</p>
+          </div>
+        ) : (
+          sortedRentals.map(rental => {
+            const status = getRentalStatus(rental, monthKey);
+            const config = STATUS_CONFIG[status];
+            const StatusIcon = config.icon;
+            const isPaid = status === 'pago';
+            return (
+              <Card key={rental.id} className="p-4">
+                <div className="flex items-start justify-between gap-3">
+                  <div className="flex-1 min-w-0">
+                    <div className="flex items-center gap-2 flex-wrap">
+                      <h3 className="font-bold text-gray-900">{rental.houseName}</h3>
+                      <span className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-medium ${config.badge}`}>
+                        <StatusIcon size={12} /> {config.label}
+                      </span>
+                    </div>
+                    {rental.tenantName && <p className="text-sm text-gray-500 mt-1">Inquilino: {rental.tenantName}</p>}
+                    <p className="text-sm text-gray-500">
+                      Vencimento: dia {rental.dueDay} • {rental.amount ? rental.amount.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' }) : 'Valor não informado'}
+                    </p>
+                    {rental.notes && <p className="text-xs text-gray-400 mt-1 italic">{rental.notes}</p>}
+                  </div>
+                  <div className="flex flex-col gap-1 flex-shrink-0">
+                    <button
+                      onClick={() => { setEditingRental(rental); setShowForm(true); }}
+                      className="p-2 text-gray-400 hover:text-blue-600 hover:bg-blue-50 rounded-full transition-colors"
+                      title="Editar"
+                    >
+                      <Pencil size={16} />
+                    </button>
+                    <button
+                      onClick={() => handleDelete(rental)}
+                      disabled={processing === rental.id}
+                      className="p-2 text-gray-400 hover:text-red-600 hover:bg-red-50 rounded-full transition-colors"
+                      title="Excluir"
+                    >
+                      <Trash2 size={16} />
+                    </button>
+                  </div>
+                </div>
+                <Button
+                  className="w-full mt-3"
+                  variant={isPaid ? 'secondary' : 'success'}
+                  onClick={() => handleTogglePaid(rental)}
+                  disabled={processing === rental.id}
+                  icon={isPaid ? Unlock : CheckCircle}
+                >
+                  {processing === rental.id ? <Loader2 className="animate-spin" /> : (isPaid ? `Desmarcar pagamento de ${monthLabel}` : `Marcar como pago (${monthLabel})`)}
+                </Button>
+              </Card>
+            );
+          })
+        )}
+      </main>
+
+      {showForm && (
+        <RentalForm
+          initialData={editingRental}
+          isSubmitting={isSubmitting}
+          onSave={handleSaveRental}
+          onCancel={() => { setShowForm(false); setEditingRental(null); }}
+        />
+      )}
+
+      <div className="fixed bottom-6 right-6 md:right-1/2 md:translate-x-48 z-50">
+        <Button
+          className="rounded-full shadow-lg px-6 py-4"
+          onClick={() => { setEditingRental(null); setShowForm(true); }}
+          icon={Plus}
+        >
+          Nova Casa
+        </Button>
+      </div>
+    </div>
+  );
+};
+
 export default function App() {
   const [user, setUser] = useState(null);
   const [view, setView] = useState('home'); 
@@ -1913,6 +2175,8 @@ export default function App() {
         return <SupplierView supplierAuth={supplierAuth} setView={setView} />;
       case 'admin_results':
         return <ResultsView quote={currentQuote} setView={setView} />;
+      case 'agenda_alugueis':
+        return <AgendaAlugueis setView={setView} />;
       default:
         return <HomeScreen setView={setView} />;
     }
