@@ -63,6 +63,7 @@ import {
   PinOff,
   ChevronUp,
   ChevronDown,
+  ChevronLeft,
   Search,
   CheckSquare,
   Square,
@@ -1866,7 +1867,11 @@ const ResultsView = ({ quote, setView }) => {
 };
 
 // 6. Agenda de Aluguéis
-const getMonthKey = (date = new Date()) => `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}`;
+const pad2 = (n) => String(n).padStart(2, '0');
+const WEEKDAY_LABELS = ['Dom', 'Seg', 'Ter', 'Qua', 'Qui', 'Sex', 'Sáb'];
+const MONTH_NAMES = ['Janeiro', 'Fevereiro', 'Março', 'Abril', 'Maio', 'Junho', 'Julho', 'Agosto', 'Setembro', 'Outubro', 'Novembro', 'Dezembro'];
+
+const getMonthKey = (date = new Date()) => `${date.getFullYear()}-${pad2(date.getMonth() + 1)}`;
 
 const getDueDateForMonth = (dueDay, monthKey) => {
   const [year, month] = monthKey.split('-').map(Number);
@@ -1875,52 +1880,119 @@ const getDueDateForMonth = (dueDay, monthKey) => {
   return new Date(year, month - 1, day);
 };
 
+// Retorna a data em que este aluguel vence no mês informado, ou null se não se aplicar
+// (uma cobrança de "data única" só existe no mês em que ela foi marcada).
+const getOccurrenceDate = (rental, monthKey) => {
+  if (rental.recurring === false) {
+    if (!rental.oneTimeDate || rental.oneTimeDate.slice(0, 7) !== monthKey) return null;
+    const [y, m, d] = rental.oneTimeDate.split('-').map(Number);
+    return new Date(y, m - 1, d);
+  }
+  if (!rental.dueDay) return null;
+  return getDueDateForMonth(rental.dueDay, monthKey);
+};
+
 const getRentalStatus = (rental, monthKey) => {
+  const dueDate = getOccurrenceDate(rental, monthKey);
+  if (!dueDate) return null;
   const payment = rental.payments?.[monthKey];
   if (payment?.paid) return 'pago';
-  const dueDate = getDueDateForMonth(rental.dueDay, monthKey);
   const today = new Date();
   today.setHours(0, 0, 0, 0);
   return dueDate < today ? 'atrasado' : 'a_vencer';
 };
 
+const getOccurrencesForMonth = (rentals, monthKey) => {
+  return rentals.reduce((acc, rental) => {
+    const dueDate = getOccurrenceDate(rental, monthKey);
+    if (!dueDate) return acc;
+    acc.push({ rental, dueDate, status: getRentalStatus(rental, monthKey) });
+    return acc;
+  }, []);
+};
+
+const STATUS_PRIORITY = { atrasado: 0, a_vencer: 1, pago: 2 };
+
+const sortOccurrences = (occurrences) => [...occurrences].sort((a, b) => {
+  if (STATUS_PRIORITY[a.status] !== STATUS_PRIORITY[b.status]) return STATUS_PRIORITY[a.status] - STATUS_PRIORITY[b.status];
+  return a.dueDate.getDate() - b.dueDate.getDate();
+});
+
+const addMonths = (date, delta) => new Date(date.getFullYear(), date.getMonth() + delta, 1);
+const addYears = (date, delta) => new Date(date.getFullYear() + delta, date.getMonth(), 1);
+
 const STATUS_CONFIG = {
-  pago: { label: 'Pago', badge: 'bg-green-100 text-green-700', icon: CheckCircle, iconColor: 'text-green-600' },
-  a_vencer: { label: 'A Vencer', badge: 'bg-yellow-100 text-yellow-700', icon: Clock, iconColor: 'text-yellow-600' },
-  atrasado: { label: 'Atrasado', badge: 'bg-red-100 text-red-700', icon: AlertCircle, iconColor: 'text-red-600' },
+  pago: { label: 'Pago', badge: 'bg-green-100 text-green-700', dot: 'bg-green-500', icon: CheckCircle, iconColor: 'text-green-600' },
+  a_vencer: { label: 'A Vencer', badge: 'bg-yellow-100 text-yellow-700', dot: 'bg-yellow-500', icon: Clock, iconColor: 'text-yellow-600' },
+  atrasado: { label: 'Atrasado', badge: 'bg-red-100 text-red-700', dot: 'bg-red-500', icon: AlertCircle, iconColor: 'text-red-600' },
 };
 
 const RentalForm = ({ initialData, onSave, onCancel, isSubmitting }) => {
   const [houseName, setHouseName] = useState(initialData?.houseName || '');
   const [tenantName, setTenantName] = useState(initialData?.tenantName || '');
   const [amount, setAmount] = useState(initialData?.amount ? String(initialData.amount) : '');
+  const [recurring, setRecurring] = useState(initialData?.recurring === false ? false : true);
   const [dueDay, setDueDay] = useState(initialData?.dueDay ? String(initialData.dueDay) : '');
+  const [oneTimeDate, setOneTimeDate] = useState(initialData?.oneTimeDate || '');
   const [notes, setNotes] = useState(initialData?.notes || '');
 
   const handleSubmit = () => {
-    const dueDayNum = parseInt(dueDay, 10);
     if (!houseName.trim()) return alert("Informe o nome/identificação da casa.");
-    if (!dueDayNum || dueDayNum < 1 || dueDayNum > 31) return alert("Informe um dia de vencimento válido (1 a 31).");
 
-    onSave({
+    const base = {
       houseName: houseName.trim(),
       tenantName: tenantName.trim(),
       amount: parseFloat(String(amount).replace(',', '.')) || 0,
-      dueDay: dueDayNum,
       notes: notes.trim(),
-    });
+    };
+
+    if (recurring) {
+      const dueDayNum = parseInt(dueDay, 10);
+      if (!dueDayNum || dueDayNum < 1 || dueDayNum > 31) return alert("Informe um dia de vencimento válido (1 a 31).");
+      onSave({ ...base, recurring: true, dueDay: dueDayNum, oneTimeDate: null });
+    } else {
+      if (!oneTimeDate) return alert("Informe a data do vencimento.");
+      onSave({ ...base, recurring: false, dueDay: null, oneTimeDate });
+    }
   };
 
   return (
     <div className="fixed inset-0 z-[60] bg-black/50 flex items-center justify-center p-4 backdrop-blur-sm">
-      <Card className="w-full max-w-md p-6 space-y-4">
+      <Card className="w-full max-w-md p-6 space-y-4 max-h-[90vh] overflow-y-auto">
         <h3 className="text-lg font-bold text-gray-900">{initialData ? 'Editar Casa' : 'Nova Casa'}</h3>
         <Input label="Casa / Imóvel" placeholder="Ex: Casa da Rua A, nº 12" value={houseName} onChange={e => setHouseName(e.target.value)} />
         <Input label="Inquilino (opcional)" placeholder="Ex: João Silva" value={tenantName} onChange={e => setTenantName(e.target.value)} />
-        <div className="flex gap-3">
-          <Input label="Valor do Aluguel (R$)" type="text" inputMode="decimal" placeholder="Ex: 1200" value={amount} onChange={e => setAmount(e.target.value)} className="flex-1" />
-          <Input label="Dia do Vencimento" type="text" inputMode="numeric" placeholder="Ex: 10" value={dueDay} onChange={e => setDueDay(e.target.value.replace(/\D/g, ''))} className="w-32" />
+        <Input label="Valor do Aluguel (R$)" type="text" inputMode="decimal" placeholder="Ex: 1200" value={amount} onChange={e => setAmount(e.target.value)} />
+
+        <div className="flex flex-col gap-1">
+          <label className="text-sm font-medium text-gray-600">Recorrência</label>
+          <div className="flex gap-2">
+            <button
+              type="button"
+              onClick={() => setRecurring(true)}
+              className={`flex-1 py-2 rounded-lg text-sm font-medium border transition-colors ${recurring ? 'bg-blue-600 text-white border-blue-600' : 'bg-white text-gray-600 border-gray-200'}`}
+            >
+              Recorrente (todo mês)
+            </button>
+            <button
+              type="button"
+              onClick={() => setRecurring(false)}
+              className={`flex-1 py-2 rounded-lg text-sm font-medium border transition-colors ${!recurring ? 'bg-blue-600 text-white border-blue-600' : 'bg-white text-gray-600 border-gray-200'}`}
+            >
+              Data única
+            </button>
+          </div>
         </div>
+
+        {recurring ? (
+          <>
+            <Input label="Dia do Vencimento" type="text" inputMode="numeric" placeholder="Ex: 10" value={dueDay} onChange={e => setDueDay(e.target.value.replace(/\D/g, ''))} />
+            <p className="text-xs text-gray-400 -mt-2">Se o mês não tiver esse dia (ex: dia 31 em fevereiro), o vencimento cai automaticamente no último dia do mês.</p>
+          </>
+        ) : (
+          <Input label="Data do Vencimento" type="date" value={oneTimeDate} onChange={e => setOneTimeDate(e.target.value)} />
+        )}
+
         <Input label="Observações (opcional)" placeholder="Ex: PIX preferencial" value={notes} onChange={e => setNotes(e.target.value)} />
         <div className="flex gap-3 pt-2">
           <Button variant="secondary" className="flex-1" onClick={onCancel}>Cancelar</Button>
@@ -1933,6 +2005,55 @@ const RentalForm = ({ initialData, onSave, onCancel, isSubmitting }) => {
   );
 };
 
+const RentalCard = ({ rental, monthKey, status, monthLabel, onEdit, onDelete, onTogglePaid, processing }) => {
+  const config = STATUS_CONFIG[status];
+  const StatusIcon = config.icon;
+  const isPaid = status === 'pago';
+  return (
+    <Card className="p-4">
+      <div className="flex items-start justify-between gap-3">
+        <div className="flex-1 min-w-0">
+          <div className="flex items-center gap-2 flex-wrap">
+            <h3 className="font-bold text-gray-900">{rental.houseName}</h3>
+            <span className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-medium ${config.badge}`}>
+              <StatusIcon size={12} /> {config.label}
+            </span>
+            {rental.recurring === false && (
+              <span className="text-[10px] bg-purple-100 text-purple-700 px-1.5 py-0.5 rounded font-bold">DATA ÚNICA</span>
+            )}
+          </div>
+          {rental.tenantName && <p className="text-sm text-gray-500 mt-1">Inquilino: {rental.tenantName}</p>}
+          <p className="text-sm text-gray-500">
+            Vencimento: {rental.recurring === false
+              ? new Date(`${rental.oneTimeDate}T00:00:00`).toLocaleDateString('pt-BR')
+              : `dia ${rental.dueDay} (todo mês)`}
+            {' • '}
+            {rental.amount ? rental.amount.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' }) : 'Valor não informado'}
+          </p>
+          {rental.notes && <p className="text-xs text-gray-400 mt-1 italic">{rental.notes}</p>}
+        </div>
+        <div className="flex flex-col gap-1 flex-shrink-0">
+          <button onClick={() => onEdit(rental)} className="p-2 text-gray-400 hover:text-blue-600 hover:bg-blue-50 rounded-full transition-colors" title="Editar">
+            <Pencil size={16} />
+          </button>
+          <button onClick={() => onDelete(rental)} disabled={processing === rental.id} className="p-2 text-gray-400 hover:text-red-600 hover:bg-red-50 rounded-full transition-colors" title="Excluir">
+            <Trash2 size={16} />
+          </button>
+        </div>
+      </div>
+      <Button
+        className="w-full mt-3"
+        variant={isPaid ? 'secondary' : 'success'}
+        onClick={() => onTogglePaid(rental, monthKey)}
+        disabled={processing === rental.id}
+        icon={isPaid ? Unlock : CheckCircle}
+      >
+        {processing === rental.id ? <Loader2 className="animate-spin" /> : (isPaid ? `Desmarcar pagamento de ${monthLabel}` : `Marcar como pago (${monthLabel})`)}
+      </Button>
+    </Card>
+  );
+};
+
 const AgendaAlugueis = ({ setView }) => {
   const [rentals, setRentals] = useState([]);
   const [loading, setLoading] = useState(true);
@@ -1940,9 +2061,9 @@ const AgendaAlugueis = ({ setView }) => {
   const [editingRental, setEditingRental] = useState(null);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [processing, setProcessing] = useState(null);
-
-  const monthKey = getMonthKey();
-  const monthLabel = new Date().toLocaleDateString('pt-BR', { month: 'long', year: 'numeric' });
+  const [viewMode, setViewMode] = useState('lista');
+  const [cursorDate, setCursorDate] = useState(() => new Date());
+  const [selectedDay, setSelectedDay] = useState(null);
 
   useEffect(() => {
     const unsub = onSnapshot(getCollectionRef('rentals'), (snapshot) => {
@@ -1956,15 +2077,45 @@ const AgendaAlugueis = ({ setView }) => {
     return () => unsub();
   }, []);
 
-  const sortedRentals = useMemo(() => {
-    const priority = { atrasado: 0, a_vencer: 1, pago: 2 };
-    return [...rentals].sort((a, b) => {
-      const statusA = getRentalStatus(a, monthKey);
-      const statusB = getRentalStatus(b, monthKey);
-      if (priority[statusA] !== priority[statusB]) return priority[statusA] - priority[statusB];
-      return (a.dueDay || 0) - (b.dueDay || 0);
+  const selectedMonthKey = getMonthKey(cursorDate);
+  const selectedYear = cursorDate.getFullYear();
+  const monthLabel = `${MONTH_NAMES[cursorDate.getMonth()]} de ${cursorDate.getFullYear()}`;
+
+  const monthOccurrences = useMemo(
+    () => sortOccurrences(getOccurrencesForMonth(rentals, selectedMonthKey)),
+    [rentals, selectedMonthKey]
+  );
+
+  const calendarCells = useMemo(() => {
+    const year = cursorDate.getFullYear();
+    const month = cursorDate.getMonth();
+    const daysInMonth = new Date(year, month + 1, 0).getDate();
+    const firstWeekday = new Date(year, month, 1).getDay();
+    const byDay = {};
+    monthOccurrences.forEach(occ => {
+      const day = occ.dueDate.getDate();
+      if (!byDay[day]) byDay[day] = [];
+      byDay[day].push(occ);
     });
-  }, [rentals, monthKey]);
+    const cells = [];
+    for (let i = 0; i < firstWeekday; i++) cells.push(null);
+    for (let d = 1; d <= daysInMonth; d++) cells.push({ day: d, occurrences: byDay[d] || [] });
+    return cells;
+  }, [cursorDate, monthOccurrences]);
+
+  const yearSummary = useMemo(() => {
+    return Array.from({ length: 12 }, (_, i) => {
+      const mk = `${selectedYear}-${pad2(i + 1)}`;
+      const occ = getOccurrencesForMonth(rentals, mk);
+      const counts = { atrasado: 0, a_vencer: 0, pago: 0 };
+      occ.forEach(o => { counts[o.status] = (counts[o.status] || 0) + 1; });
+      return { monthIndex: i, monthKey: mk, total: occ.length, counts };
+    });
+  }, [rentals, selectedYear]);
+
+  const goPrev = () => setCursorDate(prev => viewMode === 'ano' ? addYears(prev, -1) : addMonths(prev, -1));
+  const goNext = () => setCursorDate(prev => viewMode === 'ano' ? addYears(prev, 1) : addMonths(prev, 1));
+  const goToday = () => setCursorDate(new Date());
 
   const handleSaveRental = async (data) => {
     setIsSubmitting(true);
@@ -1984,7 +2135,7 @@ const AgendaAlugueis = ({ setView }) => {
     }
   };
 
-  const handleTogglePaid = async (rental) => {
+  const handleTogglePaid = async (rental, monthKey) => {
     const currentlyPaid = rental.payments?.[monthKey]?.paid;
     setProcessing(rental.id);
     try {
@@ -2014,18 +2165,45 @@ const AgendaAlugueis = ({ setView }) => {
     }
   };
 
+  const openEdit = (rental) => { setSelectedDay(null); setEditingRental(rental); setShowForm(true); };
+  const openDayDetail = (cell) => { if (cell && cell.occurrences.length > 0) setSelectedDay(cell.day); };
+  const dayDetailOccurrences = selectedDay ? (calendarCells.find(c => c && c.day === selectedDay)?.occurrences || []) : [];
+
   return (
     <div className="min-h-screen bg-gray-50 pb-24">
       <header className="bg-white border-b sticky top-0 z-10">
-        <div className="max-w-3xl mx-auto px-4 py-4 flex items-center justify-between">
+        <div className="max-w-3xl mx-auto px-4 pt-4 flex items-center justify-between">
           <div className="flex items-center gap-2">
             <button onClick={() => setView('admin_dashboard')} className="p-2 -ml-2 text-gray-600 hover:bg-gray-100 rounded-full">
               <ArrowLeft size={20} />
             </button>
-            <div>
-              <h1 className="font-bold text-lg text-gray-900">Agenda de Aluguéis</h1>
-              <p className="text-xs text-gray-500 capitalize">{monthLabel}</p>
+            <h1 className="font-bold text-lg text-gray-900">Agenda de Aluguéis</h1>
+          </div>
+        </div>
+
+        <div className="max-w-3xl mx-auto px-4 pb-3 pt-3 flex flex-col gap-3">
+          <div className="flex gap-1">
+            {[['lista', 'Lista'], ['mes', 'Mês'], ['ano', 'Ano']].map(([key, label]) => (
+              <button
+                key={key}
+                onClick={() => setViewMode(key)}
+                className={`flex-1 py-2 text-sm font-medium rounded-lg transition-colors ${viewMode === key ? 'bg-blue-600 text-white' : 'bg-gray-100 text-gray-600 hover:bg-gray-200'}`}
+              >
+                {label}
+              </button>
+            ))}
+          </div>
+          <div className="flex items-center justify-between">
+            <button onClick={goPrev} className="p-2 text-gray-500 hover:text-blue-600 hover:bg-gray-100 rounded-full">
+              <ChevronLeft size={20} />
+            </button>
+            <div className="text-center">
+              <p className="font-bold text-gray-800 capitalize">{viewMode === 'ano' ? selectedYear : monthLabel}</p>
+              <button onClick={goToday} className="text-xs text-blue-600 hover:underline">Hoje</button>
             </div>
+            <button onClick={goNext} className="p-2 text-gray-500 hover:text-blue-600 hover:bg-gray-100 rounded-full">
+              <ChevronRight size={20} />
+            </button>
           </div>
         </div>
       </header>
@@ -2033,65 +2211,130 @@ const AgendaAlugueis = ({ setView }) => {
       <main className="max-w-3xl mx-auto p-4 space-y-4">
         {loading ? (
           <div className="flex justify-center py-10"><Loader2 className="animate-spin text-blue-600" /></div>
-        ) : sortedRentals.length === 0 ? (
-          <div className="text-center py-20 text-gray-400">
-            <Home size={48} className="mx-auto mb-4 opacity-20" />
-            <p>Nenhuma casa cadastrada ainda.</p>
-          </div>
         ) : (
-          sortedRentals.map(rental => {
-            const status = getRentalStatus(rental, monthKey);
-            const config = STATUS_CONFIG[status];
-            const StatusIcon = config.icon;
-            const isPaid = status === 'pago';
-            return (
-              <Card key={rental.id} className="p-4">
-                <div className="flex items-start justify-between gap-3">
-                  <div className="flex-1 min-w-0">
-                    <div className="flex items-center gap-2 flex-wrap">
-                      <h3 className="font-bold text-gray-900">{rental.houseName}</h3>
-                      <span className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-medium ${config.badge}`}>
-                        <StatusIcon size={12} /> {config.label}
-                      </span>
-                    </div>
-                    {rental.tenantName && <p className="text-sm text-gray-500 mt-1">Inquilino: {rental.tenantName}</p>}
-                    <p className="text-sm text-gray-500">
-                      Vencimento: dia {rental.dueDay} • {rental.amount ? rental.amount.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' }) : 'Valor não informado'}
-                    </p>
-                    {rental.notes && <p className="text-xs text-gray-400 mt-1 italic">{rental.notes}</p>}
-                  </div>
-                  <div className="flex flex-col gap-1 flex-shrink-0">
-                    <button
-                      onClick={() => { setEditingRental(rental); setShowForm(true); }}
-                      className="p-2 text-gray-400 hover:text-blue-600 hover:bg-blue-50 rounded-full transition-colors"
-                      title="Editar"
-                    >
-                      <Pencil size={16} />
-                    </button>
-                    <button
-                      onClick={() => handleDelete(rental)}
-                      disabled={processing === rental.id}
-                      className="p-2 text-gray-400 hover:text-red-600 hover:bg-red-50 rounded-full transition-colors"
-                      title="Excluir"
-                    >
-                      <Trash2 size={16} />
-                    </button>
-                  </div>
+          <>
+            {viewMode === 'lista' && (
+              monthOccurrences.length === 0 ? (
+                <div className="text-center py-20 text-gray-400">
+                  <Home size={48} className="mx-auto mb-4 opacity-20" />
+                  <p>Nenhum vencimento em {monthLabel}.</p>
                 </div>
-                <Button
-                  className="w-full mt-3"
-                  variant={isPaid ? 'secondary' : 'success'}
-                  onClick={() => handleTogglePaid(rental)}
-                  disabled={processing === rental.id}
-                  icon={isPaid ? Unlock : CheckCircle}
-                >
-                  {processing === rental.id ? <Loader2 className="animate-spin" /> : (isPaid ? `Desmarcar pagamento de ${monthLabel}` : `Marcar como pago (${monthLabel})`)}
-                </Button>
-              </Card>
-            );
-          })
+              ) : (
+                <div className="space-y-4">
+                  {monthOccurrences.map(occ => (
+                    <RentalCard
+                      key={occ.rental.id}
+                      rental={occ.rental}
+                      monthKey={selectedMonthKey}
+                      status={occ.status}
+                      monthLabel={monthLabel}
+                      onEdit={openEdit}
+                      onDelete={handleDelete}
+                      onTogglePaid={handleTogglePaid}
+                      processing={processing}
+                    />
+                  ))}
+                </div>
+              )
+            )}
+
+            {viewMode === 'mes' && (
+              <div className="bg-white rounded-xl shadow-sm border p-3">
+                <div className="grid grid-cols-7 gap-1 text-center text-xs font-bold text-gray-400 mb-2">
+                  {WEEKDAY_LABELS.map(w => <div key={w}>{w}</div>)}
+                </div>
+                <div className="grid grid-cols-7 gap-1">
+                  {calendarCells.map((cell, idx) => {
+                    if (!cell) return <div key={idx} />;
+                    const today = new Date();
+                    const isToday = today.getFullYear() === cursorDate.getFullYear() && today.getMonth() === cursorDate.getMonth() && today.getDate() === cell.day;
+                    const worst = cell.occurrences.length
+                      ? [...cell.occurrences].sort((a, b) => STATUS_PRIORITY[a.status] - STATUS_PRIORITY[b.status])[0].status
+                      : null;
+                    const bgClass = worst === 'atrasado' ? 'bg-red-50 border-red-200'
+                      : worst === 'a_vencer' ? 'bg-yellow-50 border-yellow-200'
+                      : worst === 'pago' ? 'bg-green-50 border-green-200'
+                      : 'bg-gray-50 border-gray-100';
+                    return (
+                      <button
+                        key={idx}
+                        onClick={() => openDayDetail(cell)}
+                        disabled={cell.occurrences.length === 0}
+                        className={`aspect-square p-1 rounded-lg border flex flex-col items-center justify-start overflow-hidden transition-shadow ${bgClass} ${cell.occurrences.length > 0 ? 'cursor-pointer hover:shadow-md' : 'cursor-default'} ${isToday ? 'ring-2 ring-blue-500' : ''}`}
+                      >
+                        <span className={`text-xs font-bold ${isToday ? 'text-blue-600' : 'text-gray-600'}`}>{cell.day}</span>
+                        <div className="flex flex-wrap gap-0.5 mt-1 justify-center">
+                          {cell.occurrences.slice(0, 3).map(o => (
+                            <span key={o.rental.id} className={`w-1.5 h-1.5 rounded-full ${STATUS_CONFIG[o.status].dot}`} />
+                          ))}
+                          {cell.occurrences.length > 3 && <span className="text-[9px] text-gray-400">+{cell.occurrences.length - 3}</span>}
+                        </div>
+                      </button>
+                    );
+                  })}
+                </div>
+              </div>
+            )}
+
+            {viewMode === 'ano' && (
+              <div className="grid grid-cols-2 sm:grid-cols-3 gap-3">
+                {yearSummary.map(m => {
+                  const borderClass = m.counts.atrasado > 0 ? 'border-l-red-400'
+                    : m.counts.a_vencer > 0 ? 'border-l-yellow-400'
+                    : m.total > 0 ? 'border-l-green-400'
+                    : 'border-l-gray-200';
+                  return (
+                    <Card
+                      key={m.monthKey}
+                      className={`p-4 cursor-pointer hover:shadow-md transition-shadow border-l-4 ${borderClass}`}
+                      onClick={() => { setCursorDate(new Date(selectedYear, m.monthIndex, 1)); setViewMode('mes'); }}
+                    >
+                      <h3 className="font-bold text-gray-800">{MONTH_NAMES[m.monthIndex]}</h3>
+                      {m.total === 0 ? (
+                        <p className="text-xs text-gray-400 mt-2">Sem vencimentos</p>
+                      ) : (
+                        <div className="flex flex-col gap-1 mt-2 text-xs">
+                          {m.counts.atrasado > 0 && <span className="text-red-600 font-medium">{m.counts.atrasado} atrasado(s)</span>}
+                          {m.counts.a_vencer > 0 && <span className="text-yellow-600 font-medium">{m.counts.a_vencer} a vencer</span>}
+                          {m.counts.pago > 0 && <span className="text-green-600 font-medium">{m.counts.pago} pago(s)</span>}
+                        </div>
+                      )}
+                    </Card>
+                  );
+                })}
+              </div>
+            )}
+          </>
         )}
       </main>
+
+      {selectedDay && (
+        <div className="fixed inset-0 z-[55] bg-black/50 flex items-center justify-center p-4 backdrop-blur-sm" onClick={() => setSelectedDay(null)}>
+          <div className="bg-white rounded-xl shadow-2xl w-full max-w-md max-h-[85vh] flex flex-col" onClick={e => e.stopPropagation()}>
+            <div className="p-4 border-b border-gray-100 flex justify-between items-center bg-gray-50 rounded-t-xl">
+              <h3 className="font-bold text-gray-900">Dia {selectedDay} de {monthLabel}</h3>
+              <button onClick={() => setSelectedDay(null)} className="p-2 text-gray-400 hover:text-gray-600 rounded-full hover:bg-gray-200 transition-colors">
+                <X size={20} />
+              </button>
+            </div>
+            <div className="overflow-y-auto p-4 space-y-3">
+              {dayDetailOccurrences.map(occ => (
+                <RentalCard
+                  key={occ.rental.id}
+                  rental={occ.rental}
+                  monthKey={selectedMonthKey}
+                  status={occ.status}
+                  monthLabel={monthLabel}
+                  onEdit={openEdit}
+                  onDelete={handleDelete}
+                  onTogglePaid={handleTogglePaid}
+                  processing={processing}
+                />
+              ))}
+            </div>
+          </div>
+        </div>
+      )}
 
       {showForm && (
         <RentalForm
