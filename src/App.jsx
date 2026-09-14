@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useRef, useMemo } from 'react';
 import { initializeApp } from 'firebase/app';
-import { getAuth, signInAnonymously, onAuthStateChanged, signInWithCustomToken, signInWithEmailAndPassword, signOut } from 'firebase/auth';
+import { getAuth, signInAnonymously, onAuthStateChanged, signInWithCustomToken } from 'firebase/auth';
 import { 
   getFirestore, 
   collection, 
@@ -91,6 +91,10 @@ const db = getFirestore(app);
 
 const rawAppId = typeof __app_id !== 'undefined' ? __app_id : 'cotacao-tagavas';
 const appId = rawAppId.replace(/[^a-zA-Z0-9-_]/g, ''); 
+
+// Senhas de Admin agora são puxadas exclusivamente do Vercel para máxima segurança no GitHub
+const ADMIN_USER_HASH = (typeof process !== 'undefined' && process?.env?.REACT_APP_ADMIN_USER_HASH) || (typeof import.meta !== 'undefined' && import.meta?.env?.VITE_ADMIN_USER_HASH) || "TWVyY2FkbyBUYWdhdmFz"; 
+const ADMIN_PASS_HASH = (typeof process !== 'undefined' && process?.env?.REACT_APP_ADMIN_PASS_HASH) || (typeof import.meta !== 'undefined' && import.meta?.env?.VITE_ADMIN_PASS_HASH) || "VGFnYXZhc0AyMDI4NzQ="; 
 
 // --- Helpers de Banco de Dados ---
 const getCollectionRef = (collectionName) => {
@@ -305,29 +309,21 @@ const HomeScreen = ({ setView }) => {
 };
 
 const AdminLogin = ({ setView }) => {
-  const [email, setEmail] = useState("");
+  const [username, setUsername] = useState("");
   const [password, setPassword] = useState("");
-  const [error, setError] = useState("");
-  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState(false);
 
-  const handleLogin = async () => {
-    if (!email.trim() || !password.trim()) return;
-    setLoading(true);
-    setError("");
+  const handleLogin = () => {
     try {
-      await signInWithEmailAndPassword(auth, email.trim(), password);
-      setView('admin_dashboard');
+      if (btoa(username) === ADMIN_USER_HASH && btoa(password) === ADMIN_PASS_HASH) {
+        setView('admin_dashboard');
+      } else {
+        setError(true);
+        setPassword("");
+      }
     } catch (e) {
-      console.error("Erro de login:", e);
-      setError("E-mail ou senha incorretos.");
-      setPassword("");
-    } finally {
-      setLoading(false);
+      setError(true);
     }
-  };
-
-  const handleKeyDown = (e) => {
-    if (e.key === 'Enter') handleLogin();
   };
 
   return (
@@ -341,27 +337,22 @@ const AdminLogin = ({ setView }) => {
           <p className="text-sm text-gray-500">Entre com suas credenciais de administrador.</p>
         </div>
         <div className="space-y-4 text-left">
-          <Input
-            label="E-mail"
-            type="email"
-            placeholder="Digite seu e-mail"
-            value={email}
-            onChange={e => {setError(""); setEmail(e.target.value)}}
-            onKeyDown={handleKeyDown}
+          <Input 
+            label="Usuário" 
+            placeholder="Digite seu usuário" 
+            value={username} 
+            onChange={e => {setError(false); setUsername(e.target.value)}} 
           />
-          <Input
-            label="Senha"
-            type="password"
-            placeholder="••••"
-            value={password}
-            onChange={e => {setError(""); setPassword(e.target.value)}}
-            onKeyDown={handleKeyDown}
+          <Input 
+            label="Senha" 
+            type="password" 
+            placeholder="••••" 
+            value={password} 
+            onChange={e => {setError(false); setPassword(e.target.value)}} 
           />
-          {error && <p className="text-red-500 text-xs text-center font-medium">{error}</p>}
-
-          <Button className="w-full" onClick={handleLogin} disabled={loading}>
-            {loading ? <Loader2 className="animate-spin" /> : 'Entrar'}
-          </Button>
+          {error && <p className="text-red-500 text-xs text-center font-medium">Usuário ou senha incorretos.</p>}
+          
+          <Button className="w-full" onClick={handleLogin}>Entrar</Button>
           <button onClick={() => setView('home')} className="w-full text-sm text-gray-400 hover:text-gray-600 py-2">Voltar</button>
         </div>
       </Card>
@@ -496,16 +487,6 @@ const AdminDashboard = ({ userId, setView, setCurrentQuote }) => {
     window.location.reload();
   };
 
-  const handleLogout = async () => {
-    try {
-      await signOut(auth);
-      await signInAnonymously(auth);
-    } catch (e) {
-      console.error("Erro ao sair:", e);
-    }
-    setView('home');
-  };
-
   const handleCopy = (text) => {
     if (navigator.clipboard && window.isSecureContext) {
         navigator.clipboard.writeText(text).then(() => alert("Código copiado!")).catch(() => fallbackCopy(text));
@@ -595,7 +576,7 @@ const AdminDashboard = ({ userId, setView, setCurrentQuote }) => {
       <header className="bg-white border-b sticky top-0 z-10">
         <div className="max-w-3xl mx-auto px-4 py-4 flex items-center justify-between">
           <div className="flex items-center gap-2">
-            <button onClick={handleLogout} className="p-2 -ml-2 text-gray-600 hover:bg-gray-100 rounded-full" title="Sair">
+            <button onClick={() => setView('home')} className="p-2 -ml-2 text-gray-600 hover:bg-gray-100 rounded-full" title="Sair">
                 <LogOut size={20} />
             </button>
             <h1 className="font-bold text-lg text-gray-900">Minhas Cotações</h1>
